@@ -2,8 +2,6 @@
   "name": "trustedge",
   "private": true,
   "scripts": {
-    "install:frontend": "npm install --prefix frontend",
-    "start:frontend": "npm start --prefix frontend",
     "build:frontend": "npm run build --prefix frontend"
   }
 }

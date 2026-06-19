@@ -83,9 +83,6 @@ fields @timestamp, message, event, status_code
 | sort @timestamp desc
 ```
 
-## Local development
-
-Keep `LOG_JSON=0` in `backend/.env.development` for human-readable console output. CloudWatch is production-only.
 
 ## What not to log
 

@@ -130,7 +130,7 @@ Dashboard action (quarantine, policy apply, client block)
 | `WG_AGENT_TOKEN` | Backend → host agent | Peer apply, block/unblock, DNS sync trigger |
 | Device enroll token | TrustEdge client | `POST /v1/enroll` bootstrap |
 
-- Admin auth is **disabled when `ADMIN_API_TOKEN` is empty** (local dev convenience).
+- Admin auth is **disabled when `ADMIN_API_TOKEN` is empty** — always set this in production.
 - The host agent binds to the Docker bridge IP (`172.17.0.1`) — not the public interface.
 - CloudFront terminates HTTPS for the dashboard and proxies API requests to the backend.
 
@@ -316,7 +316,6 @@ No global event bus. Services import peer services explicitly:
 | Environment | Trigger | Target |
 |-------------|---------|--------|
 | `develop` / `main` push | GitHub Actions | EC2 backend (ECR), S3/CloudFront frontend |
-| Local dev | `docker compose -f docker-compose.dev.yml up` | localhost:8000 + :3000 + local Postgres |
 
 Host systemd services on EC2:
 
@@ -361,7 +360,6 @@ If the feature affects what dnsmasq serves:
 |----------|----------|
 | [docs/README.md](README.md) | Documentation index |
 | [README.md](../README.md) | Overview, quick start, API table |
-| [DEVELOP.md](DEVELOP.md) | Local dev, tests, migrations |
 | [API.md](API.md) | REST and WebSocket endpoints |
 | [DEPLOY.md](DEPLOY.md) | Production deployment |
 | [ENV_SETUP.md](ENV_SETUP.md) | Environment variables |
