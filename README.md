@@ -103,22 +103,18 @@ Full write-up: [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) · [do
 
 ## Quick start
 
+Production deployment on AWS (EC2, RDS, S3, CloudFront):
+
 ```bash
 git clone https://github.com/TrustEdge/TrustEdge.git
 cd TrustEdge
-cp backend/.env.example backend/.env.development
-cp frontend/.env.example frontend/.env.development
-docker compose -f docker-compose.dev.yml up --build
 ```
 
-| Service | URL |
-|---------|-----|
-| Dashboard | http://localhost:3000 |
-| API + OpenAPI | http://localhost:8000/docs |
+Follow [docs/DEPLOY.md](docs/DEPLOY.md) for EC2 setup, secrets in `/etc/trustedge/backend.env`, and CI/CD.
 
 Enroll a device with [TrustEdgeClient](https://github.com/TrustEdge/TrustEdgeClient).
 
-**Developers:** [docs/DEVELOP.md](docs/DEVELOP.md) (tests, migrations) · [docs/ENV_SETUP.md](docs/ENV_SETUP.md) (configuration)
+**Configuration:** [docs/ENV_SETUP.md](docs/ENV_SETUP.md)
 
 ---
 
@@ -128,7 +124,6 @@ Enroll a device with [TrustEdgeClient](https://github.com/TrustEdge/TrustEdgeCli
 |----------|-------------|
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture, domain model, code conventions |
-| [docs/DEVELOP.md](docs/DEVELOP.md) | Local development, pytest, Alembic |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | AWS production deployment |
 | [docs/API.md](docs/API.md) | REST and WebSocket API reference |
 | [docs/ENV_SETUP.md](docs/ENV_SETUP.md) | Environment variables and secrets |
