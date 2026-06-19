@@ -26,6 +26,7 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>` when the token
 | `POST` | `/devices/{id}/quarantine` | Full-network block (VPN iptables + DNS deny) |
 | `DELETE` | `/devices/{id}/quarantine` | Release client from quarantine early |
 | **VPN** | | |
+| `GET` | `/v1/client-config` | Public client bootstrap (enroll token, API paths, defaults) |
 | `POST` | `/v1/enroll` | WireGuard device enrollment |
 | `POST` | `/v1/usage` | Report VPN usage samples |
 | `GET` | `/vpn/topology` | VPN server and peer topology |
