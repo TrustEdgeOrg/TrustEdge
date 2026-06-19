@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Optional: require Bearer token on POST /v1/enroll (TrustEdgeClient --api-token)
     ENROLL_BOOTSTRAP_TOKEN: str = ""
 
+    # Public client bootstrap (GET /v1/client-config)
+    CLIENT_STATS_INTERVAL_SEC: float = 5.0
+    CLIENT_INSTALL_POLICY_CA_DEFAULT: bool = False
+    CLIENT_SERVICE_NAME: str = "TrustEdge"
+
     # Service identity: dns_log_watcher / automation posting DNS queries
     DNS_INGEST_TOKEN: str = ""
 
