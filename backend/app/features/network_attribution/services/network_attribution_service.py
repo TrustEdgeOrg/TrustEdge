@@ -26,9 +26,14 @@ from app.features.network_attribution.schemas.network_attribution import (
     NetworkMapResponse,
 )
 from app.features.network_attribution.services.app_catalog import normalize_app
-from app.features.vpn.models.ip_lease import IpLease
 from app.features.vpn.models.vpn_peer import VpnPeer
 from app.shared.config import settings
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,8 @@ class NetworkAttributionService:
             query_timestamp = query_timestamp.replace(tzinfo=timezone.utc)
 
         max_age = max(1, int(settings.NETWORK_ATTRIBUTION_MAX_AGE_SEC))
-        age = abs((query_timestamp - ctx.observed_at).total_seconds())
+        observed_at = _as_utc(ctx.observed_at)
+        age = abs((query_timestamp - observed_at).total_seconds())
         if age > max_age:
             return None
 
@@ -239,7 +245,7 @@ class NetworkAttributionService:
             device_id = f"device:{ctx.device_id}"
             ensure_device(ctx.device_id)
             app_id = ensure_app(ctx.app_slug, ctx.app_display_name)
-            fresh = abs((now - ctx.observed_at).total_seconds()) <= max_age
+            fresh = abs((now - _as_utc(ctx.observed_at)).total_seconds()) <= max_age
             ctx_node = nodes[device_id]
             nodes[device_id] = ctx_node.model_copy(update={"fresh": fresh})
             add_edge(device_id, app_id, "foreground")
