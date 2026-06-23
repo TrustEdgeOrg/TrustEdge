@@ -77,7 +77,6 @@ function mergeLiveQuery(
   }
 
   const appId = `app:${slug}`;
-  const domainId = `domain:${query.domain}`;
   const display = query.attributed_app_display_name || slug.replace(/_/g, ' ');
 
   const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
