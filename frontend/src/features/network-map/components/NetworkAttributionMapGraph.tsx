@@ -6,14 +6,21 @@ import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
-import { alpha, useTheme } from '@mui/material/styles';
+import { alpha, keyframes, useTheme } from '@mui/material/styles';
 import HubIcon from '@mui/icons-material/Hub';
 import { useNetworkAttributionMap } from '../hooks/useNetworkAttributionMap';
-import { edgePath, layoutNetworkMap } from '../utils/layoutNetworkMap';
+import { edgePath, layoutNetworkMap, shortenLabel } from '../utils/layoutNetworkMap';
 import { getAppIconStyle, getDeviceIconStyle, getDomainIconStyle } from '../utils/appIcons';
 import { NetworkMapEdge, PositionedNode } from '../types/networkMap';
 
-const NODE_W = 36;
+const NODE_R = 11;
+const ICON_SIZE = 13;
+
+const flowPulse = keyframes`
+  to {
+    stroke-dashoffset: -18;
+  }
+`;
 
 function MapNodeGlyph({ node }: { node: PositionedNode }) {
   const theme = useTheme();
@@ -29,39 +36,47 @@ function MapNodeGlyph({ node }: { node: PositionedNode }) {
       ? theme.palette.success.main
       : node.type === 'domain' && node.blocked
         ? theme.palette.error.main
-        : style.color;
+        : alpha(style.color, 0.85);
+
+  const tooltip =
+    node.type === 'app'
+      ? `${node.label} (foreground process)`
+      : node.type === 'domain'
+        ? `${node.label}${node.blocked ? ' · blocked' : ''}`
+        : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`;
 
   return (
-    <g transform={`translate(${node.x}, ${node.y})`}>
-      <title>
-        {node.type === 'app'
-          ? `${node.label} (foreground process)`
-          : node.type === 'domain'
-            ? `${node.label}${node.blocked ? ' · blocked' : ''}`
-            : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`}
-      </title>
+    <g transform={`translate(${node.x}, ${node.y})`} style={{ cursor: 'default' }}>
+      <title>{tooltip}</title>
       <circle
-        r={NODE_W / 2 + 4}
+        r={NODE_R + 3}
         fill={theme.palette.background.paper}
         stroke={ring}
-        strokeWidth={node.type === 'device' && node.fresh ? 2 : 1.25}
+        strokeWidth={node.type === 'device' && node.fresh ? 1.75 : 1.25}
       />
-      <circle r={NODE_W / 2} fill={style.bg} />
-      <foreignObject x={-10} y={-10} width={20} height={20} style={{ pointerEvents: 'none' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: style.color }}>
+      <circle r={NODE_R} fill={style.bg} />
+      <foreignObject
+        x={-ICON_SIZE / 2}
+        y={-ICON_SIZE / 2}
+        width={ICON_SIZE}
+        height={ICON_SIZE}
+        style={{ pointerEvents: 'none' }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: style.color,
+            fontSize: ICON_SIZE,
+            width: ICON_SIZE,
+            height: ICON_SIZE,
+            '& svg': { fontSize: ICON_SIZE },
+          }}
+        >
           {style.icon}
         </Box>
       </foreignObject>
-      <text
-        textAnchor="middle"
-        y={NODE_W / 2 + 14}
-        fontSize={10}
-        fontWeight={600}
-        fill={theme.palette.text.primary}
-        style={{ pointerEvents: 'none' }}
-      >
-        {node.label.length > 22 ? `${node.label.slice(0, 20)}…` : node.label}
-      </text>
     </g>
   );
 }
@@ -74,7 +89,7 @@ function edgeTooltip(edge: NetworkMapEdge, nodes: Map<string, PositionedNode>): 
   }
   if (edge.kind === 'dns_direct') {
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
-    return `${source} → ${target} · ${edge.query_count} DNS (no app attribution yet)${blocked}`;
+    return `${source} → ${target} · ${edge.query_count} DNS (no app yet)${blocked}`;
   }
   const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
   return `${source} → ${target} · ${edge.query_count} DNS quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked}`;
@@ -109,6 +124,9 @@ export default function NetworkAttributionMapGraph({
   const appCount = data?.nodes.filter((n) => n.type === 'app').length ?? 0;
   const domainCount = data?.nodes.filter((n) => n.type === 'domain').length ?? 0;
 
+  const landFill = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.06);
+  const laneStroke = alpha(theme.palette.divider, 0.55);
+
   return (
     <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
       {showHeader && (
@@ -127,14 +145,8 @@ export default function NetworkAttributionMapGraph({
         <Chip size="small" variant="outlined" label={`${deviceCount} devices`} />
         <Chip size="small" variant="outlined" label={`${appCount} apps`} />
         <Chip size="small" variant="outlined" label={`${domainCount} destinations`} />
-        {data && (
-          <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />
-        )}
+        {data && <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />}
       </Stack>
-
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-        Device → foreground process → DNS destination. Process icons come from macOS endpoint telemetry.
-      </Typography>
 
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
@@ -146,33 +158,42 @@ export default function NetworkAttributionMapGraph({
         sx={{
           position: 'relative',
           borderRadius: 1,
-          overflow: 'auto',
+          overflow: 'hidden',
           border: `1px solid ${theme.palette.divider}`,
-          bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.03),
-          minHeight: 280,
+          bgcolor: landFill,
+          minHeight: 300,
+          '& .network-flow-active': {
+            strokeDasharray: '5 5',
+            animation: `${flowPulse} 1.6s linear infinite`,
+          },
         }}
       >
         {loading && !layout && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
             <CircularProgress size={28} />
           </Box>
         )}
 
-        {layout && (
+        {layout && layout.nodes.length > 0 && (
           <Box
             component="svg"
             viewBox={`0 0 ${layout.width} ${layout.height}`}
-            sx={{ width: '100%', minWidth: 640, height: 'auto', display: 'block' }}
+            preserveAspectRatio="xMidYMid meet"
+            sx={{ width: '100%', height: 'auto', display: 'block', minHeight: 300 }}
             role="img"
-            aria-label="Network attribution map showing devices, foreground apps, and DNS destinations"
+            aria-label="Network map with devices, processes, and DNS destinations connected by arcs"
           >
-            <text x={COL_LABELS.device} y={24} textAnchor="middle" fontSize={11} fontWeight={700} fill={theme.palette.text.secondary}>
+            <line x1={COL_GUIDE.device} y1={28} x2={COL_GUIDE.device} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
+            <line x1={COL_GUIDE.app} y1={28} x2={COL_GUIDE.app} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
+            <line x1={COL_GUIDE.domain} y1={28} x2={COL_GUIDE.domain} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
+
+            <text x={COL_GUIDE.device} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
               Devices
             </text>
-            <text x={COL_LABELS.app} y={24} textAnchor="middle" fontSize={11} fontWeight={700} fill={theme.palette.text.secondary}>
+            <text x={COL_GUIDE.app} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
               Processes
             </text>
-            <text x={COL_LABELS.domain} y={24} textAnchor="middle" fontSize={11} fontWeight={700} fill={theme.palette.text.secondary}>
+            <text x={COL_GUIDE.domain} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
               Destinations
             </text>
 
@@ -182,30 +203,30 @@ export default function NetworkAttributionMapGraph({
               if (!from || !to) {
                 return null;
               }
-              const x1 = from.x + NODE_W / 2;
-              const x2 = to.x - NODE_W / 2;
+              const animated = edge.kind === 'dns' || edge.kind === 'dns_direct';
               const stroke =
                 edge.kind === 'foreground'
                   ? theme.palette.info.main
                   : edge.kind === 'dns_direct'
                     ? theme.palette.text.disabled
-                  : edge.blocked_count > 0
-                    ? theme.palette.error.main
-                    : theme.palette.success.main;
+                    : edge.blocked_count > 0
+                      ? theme.palette.error.main
+                      : theme.palette.success.main;
               return (
                 <path
                   key={`${edge.source}-${edge.target}-${edge.kind}`}
-                  d={edgePath(x1, from.y, x2, to.y)}
+                  d={edgePath(from.x, from.y, to.x, to.y)}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={
-                    edge.kind === 'dns' || edge.kind === 'dns_direct'
-                      ? Math.min(4, 1 + Math.log2(edge.query_count + 1))
-                      : 1.5
+                    edge.kind === 'foreground'
+                      ? 1.25
+                      : Math.min(3, 1 + Math.log2(edge.query_count + 1) * 0.6)
                   }
-                  strokeDasharray={edge.kind === 'dns_direct' ? '6 4' : undefined}
-                  opacity={edge.kind === 'foreground' ? 0.55 : edge.kind === 'dns_direct' ? 0.5 : 0.75}
+                  strokeDasharray={edge.kind === 'dns_direct' ? '5 4' : undefined}
+                  opacity={edge.kind === 'foreground' ? 0.5 : edge.kind === 'dns_direct' ? 0.45 : 0.8}
                   strokeLinecap="round"
+                  className={animated ? 'network-flow-active' : undefined}
                 >
                   <title>{edgeTooltip(edge, nodeMap)}</title>
                 </path>
@@ -220,32 +241,100 @@ export default function NetworkAttributionMapGraph({
 
         {!loading && layout && layout.nodes.length === 0 && (
           <Box sx={{ p: 3 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Dashed lines show recent DNS without a foreground app yet. Solid green/red lines mean
-              DNS attributed to a process (app icon in the center).
-            </Typography>
-            <Typography variant="body2" color="text.secondary" component="ul" sx={{ pl: 2.25, m: 0 }}>
-              <li>
-                In <strong>Live DNS</strong>, do rows show an app chip (e.g. Safari, Chrome)? If not,
-                the Mac client is not reporting foreground apps yet.
-              </li>
-              <li>
-                Rebuild and reinstall <strong>TrustEdge.app</strong> from the network-attribution
-                branch, reconnect VPN, and browse in a foreground app for 1–2 minutes.
-              </li>
-              <li>
-                Check <strong>Client profiles → Network attribution</strong> for per-app usage rows.
-              </li>
+            <Typography variant="body2" color="text.secondary">
+              No network activity in the last {data?.minutes ?? minutes} minutes. Connect a client and browse
+              to populate the map.
             </Typography>
           </Box>
         )}
       </Box>
+
+      {layout && layout.nodes.length > 0 && (
+        <>
+          <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 1.5 }}>
+            <Chip size="small" variant="outlined" label="Teal pin = device" />
+            <Chip size="small" variant="outlined" label="Center = process" />
+            <Chip size="small" variant="outlined" label="Right = DNS destination" />
+            <Chip
+              size="small"
+              variant="outlined"
+              label="Animated arc = live DNS"
+              sx={{ borderColor: 'success.main', color: 'success.main' }}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label="Dashed = no app yet"
+              sx={{ borderColor: 'text.disabled', color: 'text.secondary' }}
+            />
+          </Stack>
+
+          <Box
+            sx={{
+              mt: 1.5,
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+              gap: 1,
+            }}
+          >
+            {layout.nodes.slice(0, 12).map((node) => {
+              const style =
+                node.type === 'device'
+                  ? getDeviceIconStyle()
+                  : node.type === 'app'
+                    ? getAppIconStyle(node.app_slug)
+                    : getDomainIconStyle(node.blocked);
+              return (
+                <Stack
+                  key={node.id}
+                  direction="row"
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 1,
+                    bgcolor: alpha(theme.palette.background.paper, 0.6),
+                    border: `1px solid ${theme.palette.divider}`,
+                    minWidth: 0,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      bgcolor: style.bg,
+                      color: style.color,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      '& svg': { fontSize: 13 },
+                    }}
+                  >
+                    {style.icon}
+                  </Box>
+                  <Typography variant="caption" noWrap title={node.label} sx={{ minWidth: 0 }}>
+                    {shortenLabel(node.label)}
+                  </Typography>
+                </Stack>
+              );
+            })}
+          </Box>
+          {layout.nodes.length > 12 && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+              +{layout.nodes.length - 12} more — hover pins on the map for full names
+            </Typography>
+          )}
+        </>
+      )}
     </Paper>
   );
 }
 
-const COL_LABELS = {
-  device: 90,
-  app: 340,
-  domain: 620,
+const COL_GUIDE = {
+  device: 130,
+  app: 380,
+  domain: 640,
 };
