@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDnsQueriesWebSocketUrl } from '../../../shared/config/apiWebSocketUrl';
 import { fetchNetworkAttributionMap } from '../config/api';
-import { NetworkMapEdge, NetworkMapNode, NetworkMapResponse } from '../types/networkMap';
+import { NetworkMapEdge, NetworkMapResponse } from '../types/networkMap';
 
 interface LiveDnsAttributed {
   timestamp: string;
