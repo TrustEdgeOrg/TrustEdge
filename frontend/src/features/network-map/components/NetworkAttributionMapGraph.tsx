@@ -209,9 +209,22 @@ export default function NetworkAttributionMapGraph({
 
         {!loading && layout && layout.nodes.length === 0 && (
           <Box sx={{ p: 3 }}>
-            <Typography variant="body2" color="text.secondary">
-              No attributed network activity yet. Connect a macOS client with network attribution enabled
-              and generate DNS traffic from a foreground app (Teams, Zoom, Safari, etc.).
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              The network map only shows DNS that is <strong>attributed to a foreground app</strong> on
+              the Mac — not every query in Live DNS.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" component="ul" sx={{ pl: 2.25, m: 0 }}>
+              <li>
+                In <strong>Live DNS</strong>, do rows show an app chip (e.g. Safari, Chrome)? If not,
+                the Mac client is not reporting foreground apps yet.
+              </li>
+              <li>
+                Rebuild and reinstall <strong>TrustEdge.app</strong> from the network-attribution
+                branch, reconnect VPN, and browse in a foreground app for 1–2 minutes.
+              </li>
+              <li>
+                Check <strong>Client profiles → Network attribution</strong> for per-app usage rows.
+              </li>
             </Typography>
           </Box>
         )}
