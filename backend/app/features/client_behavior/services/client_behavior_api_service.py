@@ -245,7 +245,7 @@ class ClientBehaviorApiService:
             device = block.device
             if not device or not device.mac_address:
                 continue
-            tag = f"ng_device_{device.id}"
+            tag = f"te_device_{device.id}"
             entry = by_device.get(device.id)
             if not entry:
                 entry = ClientBlockSyncEntry(

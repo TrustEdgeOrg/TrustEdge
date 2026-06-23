@@ -49,8 +49,8 @@ cat > /tmp/cloudfront-backend-config.json <<EOF
         "Forward": "all"
       },
       "Headers": {
-        "Quantity": 1,
-        "Items": ["Host"]
+        "Quantity": 5,
+        "Items": ["Host", "Authorization", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"]
       }
     },
     "MinTTL": 0,

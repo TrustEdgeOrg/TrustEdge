@@ -46,8 +46,17 @@ export default function ClientMapIntro() {
               that VPN login country, then open a profile for details.
             </li>
             <li>
+              <strong>Inspect the gateway</strong> — click the amber <strong>VPN</strong> pin for EC2
+              endpoint, pool, DNS gateway, and live peer counts from the control plane.
+            </li>
+            <li>
               <strong>See who is live</strong> — a green ring means at least one client in that
               country had recent DNS activity on the network.
+            </li>
+            <li>
+              <strong>Follow VPN traffic</strong> — green arcs from a country flag to the amber{' '}
+              <strong>VPN gateway</strong> pin show live tunnel throughput (width + animation scale
+              with MiB/s). This is a logical view, not a literal cable route.
             </li>
           </Stack>
         </Box>
@@ -60,6 +69,24 @@ export default function ClientMapIntro() {
           size="small"
           variant="outlined"
           label="Green ring = active now"
+          sx={{
+            borderColor: 'success.main',
+            color: 'success.main',
+          }}
+        />
+        <Chip
+          size="small"
+          variant="outlined"
+          label="Amber pin = VPN gateway"
+          sx={{
+            borderColor: 'warning.main',
+            color: 'warning.main',
+          }}
+        />
+        <Chip
+          size="small"
+          variant="outlined"
+          label="Green arc = live tunnel traffic"
           sx={{
             borderColor: 'success.main',
             color: 'success.main',

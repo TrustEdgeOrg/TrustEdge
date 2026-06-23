@@ -25,7 +25,7 @@ Dashboard  →  POST /devices/{id}/quarantine  →  Backend (Docker)
     →  POST http://172.17.0.1:9109/v1/block-client   (iptables)
     →  POST http://172.17.0.1:9109/v1/sync-dns-policy  (bash run-sync.sh on host)
          →  docker compose run dns-sync  →  GET /policy/dns-sync
-         →  write /etc/dnsmasq.d/trustedge-devices/ng-device-*.conf
+         →  write /etc/dnsmasq.d/trustedge-devices/te-device-*.conf
          →  systemctl reload dnsmasq
 ```
 

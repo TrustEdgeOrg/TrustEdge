@@ -5,15 +5,30 @@ import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
-import { useTheme, alpha } from '@mui/material/styles';
+import { useTheme, alpha, keyframes } from '@mui/material/styles';
 import worldMap from '@svg-maps/world';
 import PublicIcon from '@mui/icons-material/Public';
+import VpnLockIcon from '@mui/icons-material/VpnLock';
 import { LiveClientRow } from '../hooks/useLiveClients';
 import { countryFlagEmoji, countryLabel } from '../../devices/utils/countryDisplay';
 import { countryCodeToMapPoint, WORLD_MAP_VIEW_BOX } from '../utils/countryCentroids';
+import {
+  arcStrokeWidth,
+  buildCountryTrafficFlows,
+  resolveGatewayMapPoint,
+} from '../utils/mapTrafficArcs';
+import { formatMibPerSec } from '../utils/formatBandwidth';
+import { VPN_GATEWAY_COUNTRY, VPN_GATEWAY_LABEL } from '../../../shared/config/vpnGateway';
 import CountryClientsDialog, { CountryClientsSelection } from './CountryClientsDialog';
+import VpnGatewayDialog from './VpnGatewayDialog';
 
 const MAP_VIEW_BOX = worldMap.viewBox || WORLD_MAP_VIEW_BOX;
+
+const trafficFlowDash = keyframes`
+  to {
+    stroke-dashoffset: -24;
+  }
+`;
 
 type CountryMarker = {
   countryCode: string;
@@ -54,22 +69,47 @@ function buildCountryMarkers(clients: LiveClientRow[]): CountryMarker[] {
   return markers;
 }
 
+function flowTooltip(flow: ReturnType<typeof buildCountryTrafficFlows>[number]): string {
+  const name = countryLabel(flow.countryCode, flow.countryName);
+  const parts = [
+    `${name} → ${VPN_GATEWAY_LABEL}`,
+    `${flow.clientCount} client${flow.clientCount === 1 ? '' : 's'}`,
+  ];
+  if (flow.totalMibPerSec > 0) {
+    parts.push(`↓ ${formatMibPerSec(flow.rxMibPerSec)} MiB/s · ↑ ${formatMibPerSec(flow.txMibPerSec)} MiB/s`);
+  } else if (flow.activeCount > 0) {
+    parts.push(`${flow.activeCount} active now`);
+  }
+  return parts.join(' · ');
+}
+
 interface ClientWorldMapProps {
   clients: LiveClientRow[];
   loading?: boolean;
   /** When false, page supplies the title (e.g. Client map route). */
   showHeader?: boolean;
+  /** Draw arcs from active client countries to the VPN gateway. */
+  showTrafficFlows?: boolean;
 }
 
 export default function ClientWorldMap({
   clients,
   loading = false,
   showHeader = true,
+  showTrafficFlows = true,
 }: ClientWorldMapProps) {
   const theme = useTheme();
   const [selection, setSelection] = useState<CountryClientsSelection | null>(null);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
 
   const countryMarkers = useMemo(() => buildCountryMarkers(clients), [clients]);
+  const gatewayPoint = useMemo(() => resolveGatewayMapPoint(VPN_GATEWAY_COUNTRY), []);
+  const trafficFlows = useMemo(() => {
+    if (!showTrafficFlows || !gatewayPoint) {
+      return [];
+    }
+    return buildCountryTrafficFlows(countryMarkers, gatewayPoint, VPN_GATEWAY_COUNTRY);
+  }, [countryMarkers, gatewayPoint, showTrafficFlows]);
 
   const highlightedCountryIds = useMemo(() => {
     return new Set(countryMarkers.map((m) => m.countryCode.toLowerCase()));
@@ -85,6 +125,8 @@ export default function ClientWorldMap({
     theme.palette.mode === 'dark'
       ? alpha(theme.palette.background.default, 0.6)
       : alpha(theme.palette.primary.main, 0.04);
+  const arcColor = theme.palette.success.main;
+  const gatewayStroke = theme.palette.warning.main;
 
   const openCountryDialog = (marker: CountryMarker) => {
     setSelection({
@@ -93,6 +135,8 @@ export default function ClientWorldMap({
       clients: marker.clients,
     });
   };
+
+  const gatewayLabel = countryLabel(VPN_GATEWAY_COUNTRY, null);
 
   return (
     <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
@@ -119,7 +163,8 @@ export default function ClientWorldMap({
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-            Click a flag to see all clients in that country. Green ring = at least one active now.
+            Click a flag for clients in that country, or the amber VPN pin for gateway details. Green ring
+            = at least one active now.
           </Typography>
         </>
       )}
@@ -130,6 +175,14 @@ export default function ClientWorldMap({
             <Chip size="small" variant="outlined" label={`${unknownCount} no VPN geo`} />
           )}
           <Chip size="small" variant="outlined" label={`${clients.length} clients`} />
+          {showTrafficFlows && trafficFlows.length > 0 && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`${trafficFlows.length} active flow${trafficFlows.length === 1 ? '' : 's'}`}
+              sx={{ borderColor: 'success.main', color: 'success.main' }}
+            />
+          )}
         </Stack>
       )}
 
@@ -141,6 +194,10 @@ export default function ClientWorldMap({
           overflow: 'hidden',
           bgcolor: oceanFill,
           border: `1px solid ${theme.palette.divider}`,
+          '& .traffic-flow-arc-active': {
+            strokeDasharray: '6 6',
+            animation: `${trafficFlowDash} 1.4s linear infinite`,
+          },
         }}
       >
         {loading && (
@@ -164,7 +221,7 @@ export default function ClientWorldMap({
           preserveAspectRatio="xMidYMid meet"
           sx={{ width: '100%', height: 'auto', display: 'block', minHeight: 220 }}
           role="img"
-          aria-label="World map showing client VPN login countries"
+          aria-label="World map showing client VPN login countries and gateway traffic flows"
         >
           {worldMap.locations.map((loc) => {
             const highlighted = highlightedCountryIds.has(loc.id);
@@ -178,6 +235,64 @@ export default function ClientWorldMap({
               />
             );
           })}
+
+          {showTrafficFlows &&
+            trafficFlows.map((flow) => {
+              const animated = flow.totalMibPerSec > 0.01;
+              return (
+                <path
+                  key={`flow-${flow.countryCode}`}
+                  d={flow.path}
+                  fill="none"
+                  stroke={arcColor}
+                  strokeWidth={arcStrokeWidth(flow.totalMibPerSec)}
+                  strokeLinecap="round"
+                  opacity={animated ? 0.85 : 0.45}
+                  className={animated ? 'traffic-flow-arc-active' : undefined}
+                >
+                  <title>{flowTooltip(flow)}</title>
+                </path>
+              );
+            })}
+
+          {gatewayPoint && (
+            <g
+              transform={`translate(${gatewayPoint.x}, ${gatewayPoint.y})`}
+              style={{ cursor: 'pointer' }}
+              onClick={() => setGatewayOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setGatewayOpen(true);
+                }
+              }}
+            >
+              <title>
+                {VPN_GATEWAY_LABEL} · {gatewayLabel} ({VPN_GATEWAY_COUNTRY}) — click for EC2 details
+              </title>
+              <circle
+                r={20}
+                fill={theme.palette.background.paper}
+                stroke={gatewayStroke}
+                strokeWidth={2}
+              />
+              <circle r={8} fill={alpha(gatewayStroke, 0.35)} stroke={gatewayStroke} strokeWidth={1} />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={8}
+                fontWeight={700}
+                fill={gatewayStroke}
+                y={-14}
+                style={{ pointerEvents: 'none' }}
+              >
+                VPN
+              </text>
+            </g>
+          )}
+
           {countryMarkers.map((m) => {
             const count = m.clients.length;
             const hasActive = m.activeCount > 0;
@@ -232,7 +347,20 @@ export default function ClientWorldMap({
         </Box>
       </Box>
 
+      {gatewayPoint && (
+        <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 1.5 }}>
+          <VpnLockIcon sx={{ fontSize: 16, color: 'warning.main' }} />
+          <Typography variant="caption" color="text.secondary">
+            Amber pin = {VPN_GATEWAY_LABEL} ({gatewayLabel}) — click for EC2 / WireGuard details.{' '}
+            {showTrafficFlows
+              ? 'Green arcs show live VPN activity from enroll country to gateway (not literal routing).'
+              : 'Enable traffic flows to see live VPN arcs.'}
+          </Typography>
+        </Stack>
+      )}
+
       <CountryClientsDialog selection={selection} onClose={() => setSelection(null)} />
+      <VpnGatewayDialog open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
 
       {!loading && clients.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>

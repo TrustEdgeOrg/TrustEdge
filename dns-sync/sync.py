@@ -128,7 +128,7 @@ def convert_device_entry_to_dnsmasq(
 ) -> List[str]:
     if block_ipv6_ip is None:
         block_ipv6_ip = BLOCK_IPV6_IP
-    tag = entry.get('tag') or f"ng_device_{entry.get('device_id')}"
+    tag = entry.get('tag') or f"te_device_{entry.get('device_id')}"
     host_line = _dhcp_host_tag_line(entry, tag)
     if not host_line:
         return []
@@ -195,10 +195,11 @@ def write_client_block_configs(files: Dict[str, List[str]], config_dir: str) -> 
 
         active_names = set(files.keys())
         removed = 0
-        for existing in config_path.glob('ng-device-*.conf'):
-            if existing.name not in active_names:
-                existing.unlink()
-                removed += 1
+        for pattern in ('te-device-*.conf', 'ng-device-*.conf'):
+            for existing in config_path.glob(pattern):
+                if existing.name not in active_names:
+                    existing.unlink()
+                    removed += 1
 
         for filename, lines in files.items():
             content = '\n'.join(lines) + '\n'
@@ -250,7 +251,7 @@ def sync_policy_dns():
         device_id = entry.get('device_id')
         lines = convert_device_entry_to_dnsmasq(entry, BLOCK_IP)
         if device_id and lines:
-            files[f"ng-device-{device_id}.conf"] = lines
+            files[f"te-device-{device_id}.conf"] = lines
 
     if not write_client_block_configs(files, CLIENT_BLOCKS_CONFIG_DIR):
         return False

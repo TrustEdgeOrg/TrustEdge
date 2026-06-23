@@ -111,7 +111,6 @@ def dashboard_env(monkeypatch):
 @pytest.fixture
 def behavior_env(monkeypatch):
     monkeypatch.setattr("app.shared.config.settings.BEHAVIOR_REVIEW_MODE", "template")
-    monkeypatch.setattr("app.shared.config.settings.BEHAVIOR_FAST_START", True)
 
 
 @pytest.fixture

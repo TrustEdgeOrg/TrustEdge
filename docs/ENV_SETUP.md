@@ -1,248 +1,83 @@
 # Environment Variables Setup Guide
 
-How to configure TrustEdge for local development and production.
+How to configure TrustEdge for production.
 
-**Canonical references:** [backend/.env.example](../backend/.env.example) and [frontend/.env.example](../frontend/.env.example) list every variable. This guide covers setup steps and the most important groups.
+**Canonical references:** [backend/.env.production.example](../backend/.env.production.example), [backend/.env.example](../backend/.env.example), and [frontend/.env.example](../frontend/.env.example).
 
 ## Overview
 
 | Environment | Backend file | Frontend file |
 |-------------|--------------|---------------|
-| Development | `backend/.env.development` | `frontend/.env.development` |
+| Production (EC2 host) | `/etc/trustedge/backend.env` | Built into S3 deploy via CI |
 | Production (Docker) | `backend/.env.production` | `frontend/.env.production` |
-| Production (EC2 host) | `/etc/trustedge/backend.env` | Built into S3 deploy |
 
-`.env` files are gitignored. Copy from `.env.example` templates.
+`.env` files are gitignored. Copy from `.env.example` / `.env.production.example` templates.
 
-## Backend Environment Variables
+## Backend (production)
 
-### Development (`.env.development`)
-
-Create `backend/.env.development`:
+On EC2 the live file is `/etc/trustedge/backend.env` (see [DEPLOY.md](DEPLOY.md)). Minimum required groups:
 
 ```env
-# Development Environment Variables
-# Database Configuration
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=12345
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:12345@db:5432/trustedge
+DB_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require
 
-# Application Configuration
-PYTHONUNBUFFERED=1
-ENVIRONMENT=development
-
-# Logging
-LOG_LEVEL=DEBUG
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# DNS ingest (default: only blocked queries persisted to RDS; live feed always uses WebSocket)
-PERSIST_ALL_DNS=false
-```
-
-### Production (`.env.production`)
-
-Create `backend/.env.production`:
-
-```env
-# Production Environment Variables
-# Database Configuration
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=CHANGE_ME_IN_PRODUCTION
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:CHANGE_ME_IN_PRODUCTION@db:5432/trustedge
-
-# Application Configuration
-PYTHONUNBUFFERED=1
+LOG_JSON=1
+LOG_LEVEL=INFO
 ENVIRONMENT=production
 
-# Logging
-LOG_LEVEL=INFO
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# Security — set strong random values in production
 ADMIN_API_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 DNS_INGEST_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 DEVICE_TOKEN_SECRET=REPLACE_WITH_LONG_RANDOM_SECRET
 WG_AGENT_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 
-# WireGuard enroll
 VPN_ENDPOINT=your-ec2-ip:51820
 VPN_SERVER_PUBLIC_KEY=REPLACE_WITH_wg0_PUBLIC_KEY
 WG_AGENT_URL=http://172.17.0.1:9109
 ```
 
-## Frontend Environment Variables
+Full catalog: [backend/.env.production.example](../backend/.env.production.example).
 
-### Development (`.env.development`)
+## Frontend (production)
 
-Create `frontend/.env.development`:
-
-```env
-REACT_APP_API_BASE_URL=http://localhost:8000
-REACT_APP_ENVIRONMENT=development
-GENERATE_SOURCEMAP=true
-
-# Optional locally; required when backend ADMIN_API_TOKEN is set
-# REACT_APP_ADMIN_API_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
-```
-
-### Production (`.env.production`)
-
-Create `frontend/.env.production`:
+Set at build time in CI or `frontend/.env.production`:
 
 ```env
-# FastAPI origin — not the CloudFront/S3 dashboard URL
 REACT_APP_API_BASE_URL=http://your-ec2-ip:8000
 REACT_APP_ADMIN_API_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 REACT_APP_ENVIRONMENT=production
 GENERATE_SOURCEMAP=false
 ```
 
-## Quick Setup
+`REACT_APP_API_BASE_URL` must be the **FastAPI origin** (EC2 `:8000`), not the CloudFront dashboard URL.
 
-### Option 1: Manual Creation
+## Docker Compose
 
-1. Copy the example content above into new files:
-   - `backend/.env.development`
-   - `backend/.env.production`
-   - `frontend/.env.development`
-   - `frontend/.env.production`
+`docker-compose.yml` loads `/etc/trustedge/backend.env` on EC2. See [DEPLOY.md](DEPLOY.md).
 
-2. Update the values for your environment, especially:
-   - Database passwords
-   - API URLs
-   - Production secrets
+## Important notes
 
-### Option 2: Using Command Line
+1. **Never commit `.env` files** — they are in `.gitignore`
+2. **Set all security tokens** in production — empty `ADMIN_API_TOKEN` disables admin auth
+3. **Match tokens** across backend, frontend (`REACT_APP_ADMIN_API_TOKEN`), dns-sync, log-watcher, and host agent
+4. **Use strong random secrets** — store in `/etc/trustedge/backend.env` with `chmod 640`
 
-**Windows (PowerShell):**
-```powershell
-# Backend development
-@"
-# Development Environment Variables
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=12345
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:12345@db:5432/trustedge
-PYTHONUNBUFFERED=1
-ENVIRONMENT=development
-LOG_LEVEL=DEBUG
-API_HOST=0.0.0.0
-API_PORT=8000
-"@ | Out-File -FilePath backend\.env.development -Encoding utf8
-
-# Backend production
-@"
-# Production Environment Variables
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=CHANGE_ME_IN_PRODUCTION
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:CHANGE_ME_IN_PRODUCTION@db:5432/trustedge
-PYTHONUNBUFFERED=1
-ENVIRONMENT=production
-LOG_LEVEL=INFO
-API_HOST=0.0.0.0
-API_PORT=8000
-"@ | Out-File -FilePath backend\.env.production -Encoding utf8
-
-# Frontend development
-@"
-REACT_APP_API_BASE_URL=http://localhost:8000
-REACT_APP_ENVIRONMENT=development
-GENERATE_SOURCEMAP=true
-"@ | Out-File -FilePath frontend\.env.development -Encoding utf8
-
-# Frontend production
-@"
-REACT_APP_API_BASE_URL=https://api.yourdomain.com
-REACT_APP_ENVIRONMENT=production
-GENERATE_SOURCEMAP=false
-"@ | Out-File -FilePath frontend\.env.production -Encoding utf8
-```
-
-**Linux/Mac:**
-```bash
-# Backend development
-cat > backend/.env.development << EOF
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=12345
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:12345@db:5432/trustedge
-PYTHONUNBUFFERED=1
-ENVIRONMENT=development
-LOG_LEVEL=DEBUG
-API_HOST=0.0.0.0
-API_PORT=8000
-EOF
-
-# Backend production
-cat > backend/.env.production << EOF
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=CHANGE_ME_IN_PRODUCTION
-POSTGRES_DB=trustedge
-DB_URL=postgresql+psycopg2://postgres:CHANGE_ME_IN_PRODUCTION@db:5432/trustedge
-PYTHONUNBUFFERED=1
-ENVIRONMENT=production
-LOG_LEVEL=INFO
-API_HOST=0.0.0.0
-API_PORT=8000
-EOF
-
-# Frontend development
-cat > frontend/.env.development << EOF
-REACT_APP_API_BASE_URL=http://localhost:8000
-REACT_APP_ENVIRONMENT=development
-GENERATE_SOURCEMAP=true
-EOF
-
-# Frontend production
-cat > frontend/.env.production << EOF
-REACT_APP_API_BASE_URL=https://api.yourdomain.com
-REACT_APP_ENVIRONMENT=production
-GENERATE_SOURCEMAP=false
-EOF
-```
-
-## Docker Compose Configuration
-
-The docker-compose files are already configured to use the appropriate `.env` files:
-
-- **Development**: `docker-compose.dev.yml` uses `.env.development`
-- **Production**: `docker-compose.yml` uses `.env.production`
-
-## Important Notes
-
-1. **Never commit `.env` files** - They are already in `.gitignore`
-2. **Update production passwords** - Change `CHANGE_ME_IN_PRODUCTION` to secure passwords
-3. **Update API URLs** - Set correct production API URLs in frontend `.env.production`
-4. **Security** - Use strong, unique passwords for production
-5. **Secrets** - Store sensitive values in environment variables or secrets management systems
-
-## Environment Variable Reference
+## Environment variable reference
 
 ### Core (backend)
 
-| Variable | Description | Dev | Prod |
-|----------|-------------|-----|------|
-| `DB_URL` | PostgreSQL connection string | `...@db:5432/...` | RDS URL |
-| `ENVIRONMENT` | Environment name | `development` | `production` |
-| `LOG_LEVEL` | Logging verbosity | `DEBUG` | `INFO` |
-| `LOG_JSON` | Structured JSON logs | `0` | `1` (see [CLOUDWATCH_LOGGING.md](CLOUDWATCH_LOGGING.md)) |
-| `PERSIST_ALL_DNS` | Store all DNS queries in RDS | `false` | `false` |
+| Variable | Description | Production |
+|----------|-------------|------------|
+| `DB_URL` | PostgreSQL connection string | RDS URL with `sslmode=require` |
+| `ENVIRONMENT` | Environment name | `production` |
+| `LOG_LEVEL` | Logging verbosity | `INFO` |
+| `LOG_JSON` | Structured JSON logs | `1` (see [CLOUDWATCH_LOGGING.md](CLOUDWATCH_LOGGING.md)) |
+| `PERSIST_ALL_DNS` | Store all DNS queries in RDS | `false` |
 
 ### Security tokens (backend)
 
 | Variable | Used by | Notes |
 |----------|---------|-------|
-| `ADMIN_API_TOKEN` | Dashboard, policy/device admin APIs | Empty = auth disabled (dev only) |
-| `DNS_INGEST_TOKEN` | `dns_log_watcher`, `dns-sync` | Required on EC2 for ingest and policy pull |
+| `ADMIN_API_TOKEN` | Dashboard, policy/device admin APIs | **Required** in production |
+| `DNS_INGEST_TOKEN` | `dns_log_watcher`, `dns-sync` | Required for ingest and policy pull |
 | `WG_AGENT_TOKEN` | Backend → `trustedge-wg-agent` | Must match host agent token |
 | `DEVICE_TOKEN_SECRET` | VPN client device tokens | Signs tokens issued at enroll |
 | `ENROLL_BOOTSTRAP_TOKEN` | `POST /v1/enroll` (optional) | TrustEdgeClient `--api-token` |
@@ -276,48 +111,39 @@ Key tuning variables — full list in [backend/.env.example](../backend/.env.exa
 |----------|-------------|
 | `BEHAVIOR_ALERT_THRESHOLD` | Score above which alerts fire |
 | `BEHAVIOR_AUTO_BLOCK_THRESHOLD` | Score above which auto-blocks trigger |
-| `BEHAVIOR_FAST_START` | Lower profile readiness bar (dev/demo) |
 | `POLICY_PACK_FETCH_ENABLED` | Fetch upstream block lists on startup |
 | `FORBIDDEN_COUNTRY_ENABLED` | Geo DNS blocking rules |
 | `NETWORK_REVIEW_MODE` | Dashboard AI review: `template` \| `openai` \| `ollama` |
 
 ### Frontend
 
-| Variable | Description | Development | Production |
-|----------|-------------|-------------|------------|
-| `REACT_APP_API_BASE_URL` | FastAPI origin (not CloudFront UI URL) | `http://localhost:8000` | `http://<ec2-ip>:8000` |
-| `REACT_APP_ADMIN_API_TOKEN` | Admin bearer token | optional | **required** when backend token set |
-| `REACT_APP_ENVIRONMENT` | Environment label | `development` | `production` |
-| `GENERATE_SOURCEMAP` | Source maps | `true` | `false` |
+| Variable | Description | Production |
+|----------|-------------|------------|
+| `REACT_APP_API_BASE_URL` | FastAPI origin (not CloudFront UI URL) | `http://<ec2-ip>:8000` |
+| `REACT_APP_ADMIN_API_TOKEN` | Admin bearer token | **required** |
+| `REACT_APP_ENVIRONMENT` | Environment label | `production` |
+| `GENERATE_SOURCEMAP` | Source maps | `false` |
 
 ## Troubleshooting
 
 ### Environment variables not loading
 
-1. Check file names match exactly: `.env.development` or `.env.production`
-2. Verify docker-compose file references the correct `.env` file
-3. Restart containers after changing `.env` files:
+1. On EC2, verify `/etc/trustedge/backend.env` exists and is readable by Docker
+2. Restart containers after changing env files:
    ```bash
-   docker-compose down
-   docker-compose up -d
+   docker compose down
+   docker compose up -d
    ```
 
 ### Frontend variables not working
 
 - React requires variables to start with `REACT_APP_`
-- Restart the dev server after changing `.env` files
-- Clear browser cache if needed
-
-### Database connection issues
-
-- Verify `DB_URL` format is correct
-- Check PostgreSQL credentials match
-- Ensure database container is running
+- Rebuild and redeploy the frontend after changing production env
 
 ### Admin API returns 401
 
 - Set `ADMIN_API_TOKEN` in backend and `REACT_APP_ADMIN_API_TOKEN` in frontend to the same value
-- Restart frontend dev server after changing `.env`
+- Redeploy frontend after changing build-time env
 
 ### Policy blocks not reaching dnsmasq (EC2)
 

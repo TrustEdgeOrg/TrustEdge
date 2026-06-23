@@ -1,9 +1,11 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import CircularProgress from '@mui/material/CircularProgress';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useLiveClients } from '../features/dashboard/hooks/useLiveClients';
@@ -13,6 +15,7 @@ const ClientWorldMap = lazy(() => import('../features/dashboard/components/Clien
 
 export default function ClientMapPage() {
   const live = useLiveClients();
+  const [showTrafficFlows, setShowTrafficFlows] = useState(true);
 
   return (
     <Box sx={{ maxWidth: 1200 }}>
@@ -28,19 +31,31 @@ export default function ClientMapPage() {
             Client map
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Geographic view of VPN login locations. Click a country flag to list clients there.
+            Geographic view of VPN login locations and live tunnel activity to your gateway.
           </Typography>
         </Box>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={live.refetch}
-          disabled={live.loading}
-          sx={{ flexShrink: 0, alignSelf: { sm: 'flex-start' } }}
-        >
-          Refresh
-        </Button>
+        <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center" sx={{ flexShrink: 0 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={showTrafficFlows}
+                onChange={(_, checked) => setShowTrafficFlows(checked)}
+              />
+            }
+            label="Traffic flows"
+            sx={{ mr: 0 }}
+          />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={live.refetch}
+            disabled={live.loading}
+          >
+            Refresh
+          </Button>
+        </Stack>
       </Stack>
 
       <ClientMapIntro />
@@ -52,7 +67,12 @@ export default function ClientMapPage() {
           </Paper>
         }
       >
-        <ClientWorldMap clients={live.clients} loading={live.loading} showHeader={false} />
+        <ClientWorldMap
+          clients={live.mapClients}
+          loading={live.loading}
+          showHeader={false}
+          showTrafficFlows={showTrafficFlows}
+        />
       </Suspense>
     </Box>
   );

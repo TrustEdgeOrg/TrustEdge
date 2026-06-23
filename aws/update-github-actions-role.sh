@@ -15,6 +15,7 @@ set +a
 AWS_REGION="${AWS_REGION:?Set AWS_REGION in aws/.env}"
 ROLE_NAME="${GITHUB_ACTIONS_ROLE_NAME:?Set GITHUB_ACTIONS_ROLE_NAME in aws/.env}"
 S3_BUCKET_NAME="${FRONTEND_S3_BUCKET:?Set FRONTEND_S3_BUCKET in aws/.env}"
+ECR_REPOSITORY="${ECR_REPOSITORY:-trustedge-backend}"
 CLOUDFRONT_DISTRIBUTION_ID="${FRONTEND_CLOUDFRONT_DISTRIBUTION_ID:?Set FRONTEND_CLOUDFRONT_DISTRIBUTION_ID in aws/.env}"
 POLICY_NAME="${GITHUB_ACTIONS_POLICY_NAME:?Set GITHUB_ACTIONS_POLICY_NAME in aws/.env}"
 
@@ -51,7 +52,9 @@ cat > /tmp/github-actions-policy.json <<EOF
         "ecr:PutImage",
         "ecr:InitiateLayerUpload",
         "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload"
+        "ecr:CompleteLayerUpload",
+        "ecr:CreateRepository",
+        "ecr:DescribeRepositories"
       ],
       "Resource": "*"
     },
@@ -60,7 +63,12 @@ cat > /tmp/github-actions-policy.json <<EOF
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket",
-        "s3:GetBucketLocation"
+        "s3:GetBucketLocation",
+        "s3:CreateBucket",
+        "s3:PutBucketWebsite",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketCors"
       ],
       "Resource": "arn:aws:s3:::${S3_BUCKET_NAME}"
     },
@@ -113,8 +121,8 @@ if aws iam get-role-policy \
     echo "[OK] Policy verified successfully"
     echo ""
     echo "Policy Summary:"
-    echo "  - ECR: Full access"
-    echo "  - S3 Bucket: ListBucket, GetBucketLocation on $S3_BUCKET_NAME"
+    echo "  - ECR: push/pull + CreateRepository ($ECR_REPOSITORY)"
+    echo "  - S3 Bucket: read/write/create/website config on $S3_BUCKET_NAME"
     echo "  - S3 Objects: GetObject, PutObject, DeleteObject on $S3_BUCKET_NAME/*"
     echo "  - CloudFront: CreateInvalidation, GetInvalidation, ListInvalidations"
     echo ""

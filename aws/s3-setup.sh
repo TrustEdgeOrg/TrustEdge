@@ -67,9 +67,24 @@ else
     exit 1
 fi
 
-# 3. Create bucket policy for public read access
+# 3. Block public access settings (must run before public bucket policy)
 echo ""
-echo "Step 3: Creating bucket policy for public read access..."
+echo "Step 3: Configuring public access block settings..."
+aws s3api put-public-access-block \
+    --bucket $BUCKET_NAME \
+    --public-access-block-configuration \
+    "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+
+if [ $? -eq 0 ]; then
+    echo "  [OK] Public access block configured"
+else
+    echo "  [ERROR] Failed to configure public access block"
+    exit 1
+fi
+
+# 4. Create bucket policy for public read access
+echo ""
+echo "Step 4: Creating bucket policy for public read access..."
 cat > /tmp/bucket-policy.json <<EOF
 {
   "Version": "2012-10-17",
@@ -94,21 +109,6 @@ if [ $? -eq 0 ]; then
     rm /tmp/bucket-policy.json
 else
     echo "  [ERROR] Failed to apply bucket policy"
-    exit 1
-fi
-
-# 4. Block public access settings (we need to allow public read for website)
-echo ""
-echo "Step 4: Configuring public access block settings..."
-aws s3api put-public-access-block \
-    --bucket $BUCKET_NAME \
-    --public-access-block-configuration \
-    "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
-
-if [ $? -eq 0 ]; then
-    echo "  [OK] Public access block configured"
-else
-    echo "  [ERROR] Failed to configure public access block"
     exit 1
 fi
 

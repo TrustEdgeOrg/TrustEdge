@@ -30,15 +30,15 @@ def test_device_quarantine_tags_vpn_client_ip():
             "device_id": 5,
             "client_ip": "10.0.0.10",
             "mac_address": "aa:bb:cc:dd:ee:ff",
-            "tag": "ng_device_5",
+            "tag": "te_device_5",
             "allowlist_only": True,
             "allowlist_domains": [],
         },
         "10.0.0.1",
         "::",
     )
-    assert "dhcp-host=aa:bb:cc:dd:ee:ff,10.0.0.10,set:ng_device_5" in lines
-    assert "tag:ng_device_5" in lines
+    assert "dhcp-host=aa:bb:cc:dd:ee:ff,10.0.0.10,set:te_device_5" in lines
+    assert "tag:te_device_5" in lines
     assert "address=/#/10.0.0.1" in lines
     assert "address=/#/::" in lines
 

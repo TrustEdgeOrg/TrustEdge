@@ -11,8 +11,8 @@ env:
   AWS_REGION: us-east-1
   S3_BUCKET: trustedge-frontend
   CLOUDFRONT_DISTRIBUTION_ID: E26UGOT5YUPFRY
-  # Must be the FastAPI origin (not the S3/CloudFront UI URL).
-  BACKEND_API_URL: http://44.218.45.174:8000
+  # HTTPS API origin (required when UI is served from CloudFront — browsers block http/ws mixed content)
+  BACKEND_API_URL: https://daemixzdg8jfd.cloudfront.net
 
 jobs:
   build:
@@ -61,6 +61,9 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -73,6 +76,12 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure S3 bucket exists
+        env:
+          FRONTEND_S3_BUCKET: ${{ env.S3_BUCKET }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: bash aws/ensure-frontend-bucket.sh
 
       - name: Upload to S3
         run: |

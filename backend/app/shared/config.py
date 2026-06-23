@@ -4,7 +4,6 @@ from typing import Dict, List
 class Settings(BaseSettings):
     DB_URL: str
     CORS_ORIGINS: str = (
-        "http://localhost:3000,http://localhost:3001,"
         "https://d2qp7beltc09b8.cloudfront.net,https://daemixzdg8jfd.cloudfront.net"
     )
 
@@ -49,8 +48,6 @@ class Settings(BaseSettings):
     ADMIN_API_TOKEN: str = ""
 
     # Client behavior profiles
-    # Fast-start mode: allow baseline/profile readiness with minimal data (dev/demo).
-    BEHAVIOR_FAST_START: bool = False
     BEHAVIOR_BASELINE_LOOKBACK_DAYS: int = 7
     # Minimum number of hourly rollup buckets required to mark profile_ready.
     # If set > 0, this overrides BEHAVIOR_MIN_PROFILE_DAYS.

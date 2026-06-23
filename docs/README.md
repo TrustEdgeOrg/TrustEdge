@@ -10,9 +10,8 @@ Engineering documentation for the [TrustEdge platform](https://github.com/TrustE
 |----------|----------|----------|
 | [DESIGN.md](DESIGN.md) | Engineers | Domain model, system topology, frontend/backend patterns, extension guide |
 | [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | Engineers, reviewers | Architecture diagram, data flows, trust boundaries |
-| [DEVELOP.md](DEVELOP.md) | Contributors | Local setup, pytest, Alembic, branch workflow |
 | [DEPLOY.md](DEPLOY.md) | Operators | AWS layout, CI/CD, EC2 host services |
-| [ENV_SETUP.md](ENV_SETUP.md) | Operators, devs | Environment variables, tokens, troubleshooting |
+| [ENV_SETUP.md](ENV_SETUP.md) | Operators | Environment variables, tokens, troubleshooting |
 | [API.md](API.md) | Integrators | REST and WebSocket endpoint reference |
 | [CLOUDWATCH_LOGGING.md](CLOUDWATCH_LOGGING.md) | Operators | Production logging, Insights queries |
 
@@ -39,16 +38,12 @@ Engineering documentation for the [TrustEdge platform](https://github.com/TrustE
 2. [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) — components and flows  
 3. [DESIGN.md](DESIGN.md) — design principles and code structure  
 
-**Local development**
-
-1. [DEVELOP.md](DEVELOP.md)  
-2. [ENV_SETUP.md](ENV_SETUP.md)  
-
 **Production operations**
 
 1. [DEPLOY.md](DEPLOY.md)  
-2. [../host-agent/README.md](../host-agent/README.md)  
-3. [CLOUDWATCH_LOGGING.md](CLOUDWATCH_LOGGING.md)  
+2. [ENV_SETUP.md](ENV_SETUP.md)  
+3. [../host-agent/README.md](../host-agent/README.md)  
+4. [CLOUDWATCH_LOGGING.md](CLOUDWATCH_LOGGING.md)  
 
 ---
 
@@ -57,6 +52,7 @@ Engineering documentation for the [TrustEdge platform](https://github.com/TrustE
 | Resource | Location |
 |----------|----------|
 | Backend env catalog | [backend/.env.example](../backend/.env.example) |
+| Production backend env | [backend/.env.production.example](../backend/.env.production.example) |
 | Frontend env catalog | [frontend/.env.example](../frontend/.env.example) |
 | Screenshot assets | [images/README.md](images/README.md) |
 | VPN enroll client | [TrustEdgeClient](https://github.com/TrustEdge/TrustEdgeClient) |

@@ -175,6 +175,8 @@ function buildLiveCountries(clients: LiveClientRow[]): LiveCountryItem[] {
 
 export interface UseLiveClientsResult {
   clients: LiveClientRow[];
+  /** All enrolled clients with VPN login geo (for client map markers). */
+  mapClients: LiveClientRow[];
   liveCountries: LiveCountryItem[];
   loading: boolean;
   error: string | null;
@@ -212,13 +214,31 @@ export function useLiveClients(): UseLiveClientsResult {
     [liveItems],
   );
 
-  const clients = useMemo(() => {
+  const enrichedRows = useMemo(() => {
     const withActivity = withLiveActivity(buildRows(devices, loginGeoByDevice));
-    const withBandwidth = attachBandwidth(withActivity, byDeviceId, byClientIp);
-    return sortClients(filterLiveRegisteredClients(withBandwidth));
+    return attachBandwidth(withActivity, byDeviceId, byClientIp);
   // dnsActivityTick forces refresh when DNS live feed marks clients active.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, loginGeoByDevice, byDeviceId, byClientIp, dnsActivityTick]);
+
+  const clients = useMemo(
+    () => sortClients(filterLiveRegisteredClients(enrichedRows)),
+    [enrichedRows],
+  );
+
+  const mapClients = useMemo(
+    () =>
+      sortClients(
+        enrichedRows.filter(
+          (row) =>
+            row.device_id != null &&
+            Boolean(row.vpn_login_country_code?.trim()) &&
+            row.vpn_login_country_code?.trim().toUpperCase() !== 'UNKNOWN' &&
+            row.vpn_login_country_code?.trim().toUpperCase() !== 'GLOBAL',
+        ),
+      ),
+    [enrichedRows],
+  );
 
   useEffect(
     () => subscribeDnsClientActivity(() => setDnsActivityTick((t) => t + 1)),
@@ -283,6 +303,7 @@ export function useLiveClients(): UseLiveClientsResult {
 
   return {
     clients,
+    mapClients,
     liveCountries,
     loading,
     error,
