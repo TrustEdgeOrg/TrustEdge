@@ -41,6 +41,26 @@ function parentKeyForDomain(
   return '__orphan__';
 }
 
+function nextFreeY(preferred: number, assigned: number[], gap: number): number {
+  let y = preferred;
+  const minGap = gap * 0.85;
+  for (;;) {
+    let collision = false;
+    for (let i = 0; i < assigned.length; i += 1) {
+      if (Math.abs(assigned[i] - y) < minGap) {
+        collision = true;
+        break;
+      }
+    }
+    if (!collision) {
+      break;
+    }
+    y += minGap;
+  }
+  assigned.push(y);
+  return y;
+}
+
 export function layoutNetworkMap(
   nodes: NetworkMapNode[],
   edges: NetworkMapEdge[],
@@ -69,14 +89,6 @@ export function layoutNetworkMap(
   });
 
   const assignedDomainYs: number[] = [];
-  const takeY = (preferred: number): number => {
-    let y = preferred;
-    while (assignedDomainYs.some((existing) => Math.abs(existing - y) < MIN_GAP * 0.85)) {
-      y += MIN_GAP * 0.85;
-    }
-    assignedDomainYs.push(y);
-    return y;
-  };
 
   for (const [parentId, group] of domainGroups.entries()) {
     const parent = positioned.get(parentId);
@@ -86,14 +98,14 @@ export function layoutNetworkMap(
       positioned.set(domain.id, {
         ...domain,
         x: COL_DOMAIN,
-        y: takeY(ys[index] ?? centerY),
+        y: nextFreeY(ys[index] ?? centerY, assignedDomainYs, MIN_GAP),
       });
     });
   }
 
   for (const domain of domains) {
     if (!positioned.has(domain.id)) {
-      positioned.set(domain.id, { ...domain, x: COL_DOMAIN, y: takeY(220) });
+      positioned.set(domain.id, { ...domain, x: COL_DOMAIN, y: nextFreeY(220, assignedDomainYs, MIN_GAP) });
     }
   }
 
