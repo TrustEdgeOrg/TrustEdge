@@ -9,6 +9,8 @@ export interface LiveDnsQuery {
   query_type: string | null;
   action: string | null;
   blocked: boolean;
+  attributed_app_slug?: string | null;
+  attributed_app_display_name?: string | null;
 }
 
 interface WebSocketMessage {

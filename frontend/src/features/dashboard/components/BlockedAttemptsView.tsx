@@ -35,6 +35,11 @@ function BlockedAttemptRow({ item }: { item: DnsQuery }) {
             </Typography>
             <Chip label={item.query_type || 'A'} size="small" variant="outlined" />
             <Chip label="Blocked" size="small" color="error" variant="outlined" />
+            {item.attributed_app_display_name && (
+              <Tooltip title="Attributed to foreground app at query time (endpoint telemetry)">
+                <Chip label={item.attributed_app_display_name} size="small" variant="outlined" />
+              </Tooltip>
+            )}
           </Stack>
         }
         secondary={

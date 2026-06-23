@@ -19,7 +19,9 @@ class DnsQueryRepository:
             domain=dns_query_data.domain,
             query_type=dns_query_data.query_type,
             action=dns_query_data.action,
-            blocked=dns_query_data.blocked
+            blocked=dns_query_data.blocked,
+            attributed_app_slug=dns_query_data.attributed_app_slug,
+            attributed_app_display_name=dns_query_data.attributed_app_display_name,
         )
         self.db.add(dns_query)
         self.db.commit()
@@ -35,7 +37,9 @@ class DnsQueryRepository:
                 domain=q.domain,
                 query_type=q.query_type,
                 action=q.action,
-                blocked=q.blocked
+                blocked=q.blocked,
+                attributed_app_slug=q.attributed_app_slug,
+                attributed_app_display_name=q.attributed_app_display_name,
             )
             for q in queries
         ]

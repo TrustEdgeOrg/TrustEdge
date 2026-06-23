@@ -20,6 +20,7 @@ import AnalyticsIcon from '@mui/icons-material/Analytics';
 import DevicesOtherIcon from '@mui/icons-material/DevicesOther';
 import BlockIcon from '@mui/icons-material/Block';
 import MapIcon from '@mui/icons-material/Map';
+import HubIcon from '@mui/icons-material/Hub';
 import './MenuContent.css';
 
 const mainListItems = [
@@ -35,6 +36,7 @@ const manageNetworkItems = [
     iconClass: 'countryAccessIcon',
   },
   { text: 'Client map', icon: <MapIcon />, path: '/client-map', iconClass: 'clientMapIcon' },
+  { text: 'Network map', icon: <HubIcon />, path: '/network-map', iconClass: 'networkMapIcon' },
 ];
 
 const analyticsItems = [

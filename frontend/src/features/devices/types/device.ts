@@ -120,6 +120,38 @@ export interface QuarantineActionResult {
   message: string;
 }
 
+export interface AppUsageSummaryItem {
+  app_slug: string;
+  app_display_name: string;
+  total_active_seconds: number;
+  total_active_hours: number;
+  hourly_bucket_count: number;
+  avg_active_minutes_per_hour: number;
+}
+
+export interface AppUsageSummaryResponse {
+  device_id: number;
+  hours: number;
+  items: AppUsageSummaryItem[];
+}
+
+export interface AppUsageHourlyItem {
+  window_start: string;
+  hour_utc: number;
+  app_slug: string;
+  app_display_name: string;
+  active_seconds: number;
+  sample_count: number;
+  active_minutes: number;
+  usage_share_pct: number;
+}
+
+export interface AppUsageHourlyListResponse {
+  device_id: number;
+  hours: number;
+  items: AppUsageHourlyItem[];
+}
+
 export interface BlockedClientsListResponse {
   items: BlockedClientSummary[];
   total: number;

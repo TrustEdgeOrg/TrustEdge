@@ -10,8 +10,11 @@ def test_client_config_route(api_client, seed_policy, enroll_env, monkeypatch):
     assert body["enroll_bootstrap_token"] == "bootstrap-secret"
     assert body["enroll_path"] == "/v1/enroll"
     assert body["usage_path"] == "/v1/usage"
+    assert body["attribution_path"] == "/v1/network-attribution"
     assert body["policy_ca_path"] == "/policy/block-page-ca"
     assert body["stats_interval_sec"] == 10.0
+    assert body["attribution_poll_sec"] == 30.0
+    assert body["attribution_report_sec"] == 60.0
     assert body["install_policy_ca_default"] is True
     assert body["service_name"] == "My TrustEdge"
     assert "teen" in body["policy_profile_slugs"]

@@ -13,6 +13,7 @@ import NetworkOverviewCard from './NetworkOverviewCard';
 import { Link as RouterLink } from 'react-router-dom';
 import Button from '@mui/material/Button';
 import MapIcon from '@mui/icons-material/Map';
+import HubIcon from '@mui/icons-material/Hub';
 import { useLiveClients } from '../hooks/useLiveClients';
 
 export default function MainGrid() {
@@ -59,15 +60,26 @@ export default function MainGrid() {
             <Typography variant="caption" color="text.secondary">
               Connected clients and VPN login countries (GeoIP at enroll).
             </Typography>
-            <Button
-              component={RouterLink}
-              to="/client-map"
-              size="small"
-              variant="text"
-              startIcon={<MapIcon fontSize="small" />}
-            >
-              Client map
-            </Button>
+            <Stack direction="row" spacing={0.5}>
+              <Button
+                component={RouterLink}
+                to="/network-map"
+                size="small"
+                variant="text"
+                startIcon={<HubIcon fontSize="small" />}
+              >
+                Network map
+              </Button>
+              <Button
+                component={RouterLink}
+                to="/client-map"
+                size="small"
+                variant="text"
+                startIcon={<MapIcon fontSize="small" />}
+              >
+                Client map
+              </Button>
+            </Stack>
           </Stack>
           <LiveClientsView live={live} />
         </Grid>

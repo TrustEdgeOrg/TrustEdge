@@ -37,6 +37,7 @@ import {
 import { DnsAlert } from '../../dns-queries/types/dnsQuery';
 import BaselineSummary from './BaselineSummary';
 import DeviceCountriesSection from './DeviceCountriesSection';
+import NetworkAttributionSection from './NetworkAttributionSection';
 import DeviceLoginLocationSection from './DeviceLoginLocationSection';
 import { countryLabel } from '../utils/countryDisplay';
 import { DeviceLoginGeoSummary } from '../types/device';
@@ -331,6 +332,8 @@ export default function ClientProfileDetail({
                 </Typography>
               )}
             </Box>
+
+            <NetworkAttributionSection deviceId={device.id} />
 
             <Box>
               <Typography variant="subtitle1" sx={{ mb: 1 }}>

@@ -25,10 +25,14 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>` when the token
 | `DELETE` | `/devices/{id}/client-blocks/{block_id}` | Revoke a per-device domain block |
 | `POST` | `/devices/{id}/quarantine` | Full-network block (VPN iptables + DNS deny) |
 | `DELETE` | `/devices/{id}/quarantine` | Release client from quarantine early |
+| `GET` | `/devices/{id}/network-attribution` | Hourly per-app usage rollups (`hours`, optional `app_slug`) |
+| `GET` | `/devices/{id}/network-attribution/summary` | Top apps with avg minutes/hour and total hours |
+| `GET` | `/network-attribution/map` | Device → app → DNS destination graph (`minutes`, default 15) |
 | **VPN** | | |
 | `GET` | `/v1/client-config` | Public client bootstrap (enroll token, API paths, defaults) |
 | `POST` | `/v1/enroll` | WireGuard device enrollment |
 | `POST` | `/v1/usage` | Report VPN usage samples |
+| `POST` | `/v1/network-attribution` | Report foreground app intervals (device token) |
 | `GET` | `/vpn/topology` | VPN server and peer topology |
 | **DNS Queries** | | |
 | `GET` | `/dns-queries` | List DNS queries (paginated, filterable) |
