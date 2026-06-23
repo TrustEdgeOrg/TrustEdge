@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDnsQueriesWebSocketUrl } from '../../../shared/config/apiWebSocketUrl';
 import { devicesApi } from '../../devices/config/api';
 import { fetchNetworkAttributionMap } from '../config/api';
+import { mergeMapSnapshots } from '../utils/mergeMapSnapshots';
 import { NetworkMapEdge, NetworkMapResponse } from '../types/networkMap';
 
 interface LiveDnsAttributed {
@@ -177,7 +178,7 @@ export function useNetworkAttributionMap(minutes = 15, pollSec = 30) {
           });
         }
       }
-      setData(response);
+      setData((prev) => mergeMapSnapshots(response, prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load network map');
     } finally {
