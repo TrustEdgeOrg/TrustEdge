@@ -14,7 +14,7 @@ export interface NetworkMapNode {
 export interface NetworkMapEdge {
   source: string;
   target: string;
-  kind: 'foreground' | 'dns';
+  kind: 'foreground' | 'dns' | 'dns_direct';
   query_count: number;
   blocked_count: number;
 }

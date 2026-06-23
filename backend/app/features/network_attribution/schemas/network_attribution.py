@@ -67,7 +67,7 @@ class NetworkMapNode(BaseModel):
 class NetworkMapEdge(BaseModel):
     source: str
     target: str
-    kind: Literal["foreground", "dns"]
+    kind: Literal["foreground", "dns", "dns_direct"]
     query_count: int = 1
     blocked_count: int = 0
 

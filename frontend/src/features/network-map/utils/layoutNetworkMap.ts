@@ -52,22 +52,32 @@ export function layoutNetworkMap(
   });
 
   const domainAppLinks = new Map<string, string>();
+  const domainDeviceLinks = new Map<string, string>();
   for (const edge of edges) {
-    if (edge.kind !== 'dns') {
-      continue;
+    if (edge.kind === 'dns') {
+      domainAppLinks.set(edge.target, edge.source);
     }
-    domainAppLinks.set(edge.target, edge.source);
+    if (edge.kind === 'dns_direct') {
+      domainDeviceLinks.set(edge.target, edge.source);
+    }
   }
 
   const domainsByApp = new Map<string, NetworkMapNode[]>();
+  const domainsByDevice = new Map<string, NetworkMapNode[]>();
   for (const domain of domains) {
     const appId = domainAppLinks.get(domain.id);
-    if (!appId) {
+    if (appId) {
+      const list = domainsByApp.get(appId) ?? [];
+      list.push(domain);
+      domainsByApp.set(appId, list);
       continue;
     }
-    const list = domainsByApp.get(appId) ?? [];
-    list.push(domain);
-    domainsByApp.set(appId, list);
+    const deviceId = domainDeviceLinks.get(domain.id);
+    if (deviceId) {
+      const list = domainsByDevice.get(deviceId) ?? [];
+      list.push(domain);
+      domainsByDevice.set(deviceId, list);
+    }
   }
 
   const domainY = new Map<string, number>();
@@ -79,6 +89,24 @@ export function layoutNetworkMap(
       const offset = (index - (sorted.length - 1) / 2) * spread;
       domainY.set(domain.id, center + offset);
     });
+  }
+  for (const [deviceId, group] of domainsByDevice.entries()) {
+    const center = deviceY.get(deviceId) ?? TOP_PAD;
+    const spread = Math.max(ROW_HEIGHT * 0.55, 28);
+    const sorted = [...group].sort((a, b) => a.label.localeCompare(b.label));
+    sorted.forEach((domain, index) => {
+      if (domainY.has(domain.id)) {
+        return;
+      }
+      const offset = (index - (sorted.length - 1) / 2) * spread;
+      domainY.set(domain.id, center + offset);
+    });
+  }
+
+  for (const domain of domains) {
+    if (!domainY.has(domain.id)) {
+      domainY.set(domain.id, TOP_PAD);
+    }
   }
 
   const positioned: PositionedNode[] = nodes.map((node) => {

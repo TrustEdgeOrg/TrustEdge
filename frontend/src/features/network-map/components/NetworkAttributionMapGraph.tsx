@@ -72,6 +72,10 @@ function edgeTooltip(edge: NetworkMapEdge, nodes: Map<string, PositionedNode>): 
   if (edge.kind === 'foreground') {
     return `${source} → ${target} (foreground app)`;
   }
+  if (edge.kind === 'dns_direct') {
+    const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
+    return `${source} → ${target} · ${edge.query_count} DNS (no app attribution yet)${blocked}`;
+  }
   const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
   return `${source} → ${target} · ${edge.query_count} DNS quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked}`;
 }
@@ -183,6 +187,8 @@ export default function NetworkAttributionMapGraph({
               const stroke =
                 edge.kind === 'foreground'
                   ? theme.palette.info.main
+                  : edge.kind === 'dns_direct'
+                    ? theme.palette.text.disabled
                   : edge.blocked_count > 0
                     ? theme.palette.error.main
                     : theme.palette.success.main;
@@ -192,8 +198,13 @@ export default function NetworkAttributionMapGraph({
                   d={edgePath(x1, from.y, x2, to.y)}
                   fill="none"
                   stroke={stroke}
-                  strokeWidth={edge.kind === 'dns' ? Math.min(4, 1 + Math.log2(edge.query_count + 1)) : 1.5}
-                  opacity={edge.kind === 'foreground' ? 0.55 : 0.75}
+                  strokeWidth={
+                    edge.kind === 'dns' || edge.kind === 'dns_direct'
+                      ? Math.min(4, 1 + Math.log2(edge.query_count + 1))
+                      : 1.5
+                  }
+                  strokeDasharray={edge.kind === 'dns_direct' ? '6 4' : undefined}
+                  opacity={edge.kind === 'foreground' ? 0.55 : edge.kind === 'dns_direct' ? 0.5 : 0.75}
                   strokeLinecap="round"
                 >
                   <title>{edgeTooltip(edge, nodeMap)}</title>
@@ -210,8 +221,8 @@ export default function NetworkAttributionMapGraph({
         {!loading && layout && layout.nodes.length === 0 && (
           <Box sx={{ p: 3 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              The network map only shows DNS that is <strong>attributed to a foreground app</strong> on
-              the Mac — not every query in Live DNS.
+              Dashed lines show recent DNS without a foreground app yet. Solid green/red lines mean
+              DNS attributed to a process (app icon in the center).
             </Typography>
             <Typography variant="body2" color="text.secondary" component="ul" sx={{ pl: 2.25, m: 0 }}>
               <li>

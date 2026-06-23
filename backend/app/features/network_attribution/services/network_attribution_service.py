@@ -292,6 +292,44 @@ class NetworkAttributionService:
                     blocked_count=blocked_count,
                 )
 
+        attributed_domains: set[tuple[int, str]] = set(dns_group.keys())
+        all_dns_rows = (
+            self.db.query(DnsQuery)
+            .filter(DnsQuery.timestamp >= since)
+            .order_by(DnsQuery.timestamp.desc())
+            .limit(400)
+            .all()
+        )
+        direct_group: dict[tuple[int, str], tuple[int, int]] = {}
+        for row in all_dns_rows:
+            if (row.attributed_app_slug or "").strip():
+                continue
+            match = ip_to_device.get(row.client_ip)
+            if match is None:
+                continue
+            device_id, _, _ = match
+            key = (device_id, row.domain)
+            if key in attributed_domains:
+                continue
+            blocked = bool(row.blocked)
+            prev = direct_group.get(key)
+            if prev is None:
+                direct_group[key] = (1, 1 if blocked else 0)
+            else:
+                direct_group[key] = (prev[0] + 1, prev[1] + (1 if blocked else 0))
+
+        for (device_id, domain), (count, blocked_count) in direct_group.items():
+            device_node = ensure_device(device_id)
+            domain_node = ensure_domain(domain, blocked_count > 0)
+            key = (device_node, domain_node, "dns_direct")
+            edge_map[key] = NetworkMapEdge(
+                source=device_node,
+                target=domain_node,
+                kind="dns_direct",
+                query_count=count,
+                blocked_count=blocked_count,
+            )
+
         return NetworkMapResponse(
             generated_at=now,
             minutes=minutes,

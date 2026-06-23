@@ -29,15 +29,53 @@ function mergeLiveQuery(
   query: LiveDnsAttributed,
   ipToDevice: Map<string, DeviceLookup>,
 ): NetworkMapResponse {
-  const slug = query.attributed_app_slug?.trim();
-  if (!slug) {
-    return graph;
-  }
-
   const mapped = ipToDevice.get(query.client_ip);
   const label = mapped?.label ?? query.client_ip;
   const numericId = mapped?.deviceId ?? 0;
   const deviceNodeId = numericId > 0 ? `device:${numericId}` : `device:ip:${query.client_ip}`;
+  const domainId = `domain:${query.domain}`;
+
+  const slug = query.attributed_app_slug?.trim();
+  if (!slug) {
+    const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
+    if (!nodes.has(deviceNodeId)) {
+      nodes.set(deviceNodeId, {
+        id: deviceNodeId,
+        type: 'device',
+        label,
+        client_ip: query.client_ip,
+        device_id: numericId > 0 ? numericId : null,
+      });
+    }
+    const existingDomain = nodes.get(domainId);
+    nodes.set(domainId, {
+      id: domainId,
+      type: 'domain',
+      label: query.domain,
+      blocked: query.blocked || existingDomain?.blocked || false,
+    });
+    const edgeKey = (e: NetworkMapEdge) => `${e.source}|${e.target}|${e.kind}`;
+    const edges = new Map(graph.edges.map((e) => [edgeKey(e), e]));
+    const directKey = `${deviceNodeId}|${domainId}|dns_direct`;
+    const prevDirect = edges.get(directKey);
+    if (prevDirect) {
+      edges.set(directKey, {
+        ...prevDirect,
+        query_count: prevDirect.query_count + 1,
+        blocked_count: prevDirect.blocked_count + (query.blocked ? 1 : 0),
+      });
+    } else {
+      edges.set(directKey, {
+        source: deviceNodeId,
+        target: domainId,
+        kind: 'dns_direct',
+        query_count: 1,
+        blocked_count: query.blocked ? 1 : 0,
+      });
+    }
+    return { ...graph, nodes: Array.from(nodes.values()), edges: Array.from(edges.values()) };
+  }
+
   const appId = `app:${slug}`;
   const domainId = `domain:${query.domain}`;
   const display = query.attributed_app_display_name || slug.replace(/_/g, ' ');
