@@ -34,6 +34,8 @@ from app.features.policy.models.geo_country_block import (  # noqa: F401
 )
 from app.features.policy.models.device_quarantine import DeviceQuarantine  # noqa: F401
 from app.features.policy.models.policy_sync_status import PolicySyncStatus  # noqa: F401
+from app.features.network_attribution.models.device_app_usage_rollup import DeviceAppUsageRollup  # noqa: F401
+from app.features.network_attribution.models.device_network_context import DeviceNetworkContext  # noqa: F401
 
 
 @pytest.fixture(autouse=True)

@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Optional: require Bearer token on POST /v1/enroll (TrustEdgeClient --api-token)
     ENROLL_BOOTSTRAP_TOKEN: str = ""
 
+    # Public client bootstrap (GET /v1/client-config)
+    CLIENT_STATS_INTERVAL_SEC: float = 5.0
+    CLIENT_INSTALL_POLICY_CA_DEFAULT: bool = False
+    CLIENT_SERVICE_NAME: str = "TrustEdge"
+
     # Service identity: dns_log_watcher / automation posting DNS queries
     DNS_INGEST_TOKEN: str = ""
 
@@ -81,6 +86,14 @@ class Settings(BaseSettings):
     # JSON list, e.g. [{"user_country":"IL","blocked_countries":["IR","SY","KP"]}]
     FORBIDDEN_COUNTRY_ENABLED: bool = True
     FORBIDDEN_COUNTRY_RULES: str = '[{"user_country":"IL","blocked_countries":["IR"]}]'
+
+    # Endpoint network attribution (foreground app → DNS correlation)
+    NETWORK_ATTRIBUTION_ENABLED: bool = True
+    NETWORK_ATTRIBUTION_MAX_AGE_SEC: int = 120
+    NETWORK_ATTRIBUTION_RETENTION_DAYS: int = 30
+    CLIENT_ATTRIBUTION_PATH: str = "/v1/network-attribution"
+    CLIENT_ATTRIBUTION_POLL_SEC: float = 30.0
+    CLIENT_ATTRIBUTION_REPORT_SEC: float = 60.0
 
     # Reject VPN enroll when login GeoIP is in these countries (comma or JSON list), e.g. IR
     VPN_LOGIN_GEO_BLOCK_ENABLED: bool = True

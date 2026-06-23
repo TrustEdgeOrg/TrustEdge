@@ -15,10 +15,14 @@ from app.shared.dependencies import get_db
 from app.features.dns_queries.routes.dns_query_route import router as dns_query_router
 from app.features.policy.routes.policy_route import router as policy_router
 from app.features.devices.routes.device_route import router as device_router
+from app.features.vpn.routes.client_config_route import router as client_config_router
 from app.features.vpn.routes.enroll_route import router as vpn_router
 from app.features.vpn.routes.usage_route import router as usage_router
 from app.features.vpn.routes.topology_route import router as vpn_topology_router
 from app.features.dashboard.routes.dashboard_route import router as dashboard_router
+from app.features.network_attribution.routes.network_attribution_route import (
+    router as network_attribution_router,
+)
 from app.features.policy.startup import warmup_policy_packs
 from app.shared.redis_client import close_redis
 from app.shared.config import settings
@@ -132,7 +136,9 @@ def health(db: Session = Depends(get_db)):
 app.include_router(policy_router)
 app.include_router(dns_query_router)
 app.include_router(device_router)
+app.include_router(client_config_router)
 app.include_router(vpn_router)
 app.include_router(usage_router)
+app.include_router(network_attribution_router)
 app.include_router(vpn_topology_router)
 app.include_router(dashboard_router)

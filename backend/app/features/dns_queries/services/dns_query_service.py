@@ -13,6 +13,7 @@ from app.features.client_behavior.services.client_behavior_aggregator import Cli
 from app.features.policy.services.forbidden_country_service import ForbiddenCountryService
 from app.features.client_behavior.services.behavior_scoring_service import BehaviorScoringService
 from app.features.devices.repositories.device_repository import DeviceRepository
+from app.features.network_attribution.services.network_attribution_service import NetworkAttributionService
 from app.shared.config import settings
 from app.shared.logging_context import structured_extra
 from app.shared.utils.logging import get_logger
@@ -34,6 +35,7 @@ class DnsQueryService:
     """Implementation of IDnsQueryService."""
 
     def create_query(self, dns_query_data: DnsQueryCreate, db: Session) -> DnsQueryResponse:
+        NetworkAttributionService(db).enrich_dns_queries([dns_query_data])
         device_repository = DeviceRepository(db)
         device_repository.ensure_devices_for_client_ips([dns_query_data.client_ip])
         ingest_stats.record([dns_query_data])
@@ -53,6 +55,8 @@ class DnsQueryService:
                 query_type=dns_query_data.query_type,
                 action=dns_query_data.action,
                 blocked=dns_query_data.blocked,
+                attributed_app_slug=dns_query_data.attributed_app_slug,
+                attributed_app_display_name=dns_query_data.attributed_app_display_name,
                 created_at=None,
             )
 
@@ -71,6 +75,7 @@ class DnsQueryService:
         return DnsQueryResponse.model_validate(dns_query)
 
     def bulk_create_queries(self, queries: List[DnsQueryCreate], db: Session) -> dict:
+        NetworkAttributionService(db).enrich_dns_queries(queries)
         device_repository = DeviceRepository(db)
         device_repository.ensure_devices_for_client_ips([q.client_ip for q in queries])
         ingest_stats.record(queries)

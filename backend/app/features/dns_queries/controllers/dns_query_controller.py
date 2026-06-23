@@ -7,6 +7,7 @@ from datetime import datetime
 from app.features.dns_queries.services.dns_query_service_interface import IDnsQueryService
 from app.features.dns_queries.schemas.dns_query import DnsQueryCreate, DnsQueryBulkCreate
 from app.features.dns_queries.services.whois_service import WhoisLookupError, lookup_domain_whois
+from app.features.network_attribution.services.network_attribution_service import NetworkAttributionService
 from app.shared.logging_context import structured_extra
 from app.shared.utils.logging import get_logger
 from app.shared.websocket_manager import ws_manager
@@ -15,11 +16,13 @@ logger = get_logger(__name__)
 
 
 def create_dns_query_controller(dns_query_data: DnsQueryCreate, db: Session, service: IDnsQueryService):
+    NetworkAttributionService(db).enrich_dns_queries([dns_query_data])
     _broadcast_queries([dns_query_data])
     return service.create_query(dns_query_data, db)
 
 
 def bulk_create_dns_queries_controller(bulk_data: DnsQueryBulkCreate, db: Session, service: IDnsQueryService):
+    NetworkAttributionService(db).enrich_dns_queries(bulk_data.queries)
     _broadcast_queries(bulk_data.queries)
     return service.bulk_create_queries(bulk_data.queries, db)
 
@@ -39,6 +42,8 @@ def _broadcast_queries(queries: List[DnsQueryCreate]):
                 "query_type": q.query_type,
                 "action": q.action,
                 "blocked": q.blocked,
+                "attributed_app_slug": q.attributed_app_slug,
+                "attributed_app_display_name": q.attributed_app_display_name,
             }
             for q in queries
         ]

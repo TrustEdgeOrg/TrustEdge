@@ -6,6 +6,7 @@ import CountryAccessPage from '../pages/CountryAccessPage';
 import ClientProfilesPage from '../pages/ClientProfilesPage';
 import BlockedClientsPage from '../pages/BlockedClientsPage';
 import ClientMapPage from '../pages/ClientMapPage';
+import NetworkMapPage from '../pages/NetworkMapPage';
 
 export const routes: RouteObject[] = [
   {
@@ -53,6 +54,14 @@ export const routes: RouteObject[] = [
     element: (
       <Layout>
         <ClientMapPage />
+      </Layout>
+    ),
+  },
+  {
+    path: '/network-map',
+    element: (
+      <Layout>
+        <NetworkMapPage />
       </Layout>
     ),
   },

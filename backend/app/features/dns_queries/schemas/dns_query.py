@@ -10,6 +10,8 @@ class DnsQueryCreate(BaseModel):
     query_type: Optional[str] = None
     action: Optional[str] = None
     blocked: bool = False
+    attributed_app_slug: Optional[str] = None
+    attributed_app_display_name: Optional[str] = None
 
 
 class DnsQueryBulkCreate(BaseModel):
@@ -27,6 +29,8 @@ class DnsQueryResponse(BaseModel):
     query_type: Optional[str] = None
     action: Optional[str] = None
     blocked: bool
+    attributed_app_slug: Optional[str] = None
+    attributed_app_display_name: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:
