@@ -115,6 +115,19 @@ Key tuning variables — full list in [backend/.env.example](../backend/.env.exa
 | `FORBIDDEN_COUNTRY_ENABLED` | Geo DNS blocking rules |
 | `NETWORK_REVIEW_MODE` | Dashboard AI review: `template` \| `openai` \| `ollama` |
 
+### Network attribution (backend + client)
+
+Endpoint telemetry: foreground app time while VPN is connected, correlated with DNS queries.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NETWORK_ATTRIBUTION_ENABLED` | Enable ingest and DNS correlation | `true` |
+| `NETWORK_ATTRIBUTION_MAX_AGE_SEC` | Max age of app context when tagging DNS | `120` |
+| `NETWORK_ATTRIBUTION_RETENTION_DAYS` | Rollup retention (cleanup TBD) | `30` |
+| `CLIENT_ATTRIBUTION_PATH` | Client POST path | `/v1/network-attribution` |
+| `CLIENT_ATTRIBUTION_POLL_SEC` | Foreground app poll interval | `30` |
+| `CLIENT_ATTRIBUTION_REPORT_SEC` | Batch report interval | `60` |
+
 ### Frontend
 
 | Variable | Description | Production |

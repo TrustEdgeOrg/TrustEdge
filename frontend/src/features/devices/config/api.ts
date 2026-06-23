@@ -12,6 +12,8 @@ import {
   ClientBlockedDomain,
   BlockedClientsListResponse,
   QuarantineActionResult,
+  AppUsageSummaryResponse,
+  AppUsageHourlyListResponse,
 } from '../types/device';
 import { DevicePolicyAssignment } from '../../policy/types/policy';
 import { UsageHistoryResponse } from '../../dashboard/types/usageHistory';
@@ -96,4 +98,17 @@ export const devicesApi = {
     apiFetch<DnsAlertListResponse>(
       `/devices/${deviceId}/behavior-events?page=${page}&page_size=${pageSize}`,
     ),
+  getNetworkAttributionSummary: (deviceId: number, hours = 168) =>
+    apiFetch<AppUsageSummaryResponse>(
+      `/devices/${deviceId}/network-attribution/summary?hours=${hours}`,
+    ),
+  getNetworkAttributionHourly: (deviceId: number, hours = 168, appSlug?: string) => {
+    const params = new URLSearchParams({ hours: String(hours) });
+    if (appSlug) {
+      params.set('app_slug', appSlug);
+    }
+    return apiFetch<AppUsageHourlyListResponse>(
+      `/devices/${deviceId}/network-attribution?${params.toString()}`,
+    );
+  },
 };

@@ -117,6 +117,9 @@ export default function ClientMapIntro() {
         >
           Country access policy
         </Button>
+        <Button component={RouterLink} to="/network-map" size="small" variant="outlined">
+          Network attribution map
+        </Button>
         <Button component={RouterLink} to="/client-profiles" size="small" variant="text">
           Client profiles
         </Button>

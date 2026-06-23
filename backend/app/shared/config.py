@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     FORBIDDEN_COUNTRY_ENABLED: bool = True
     FORBIDDEN_COUNTRY_RULES: str = '[{"user_country":"IL","blocked_countries":["IR"]}]'
 
+    # Endpoint network attribution (foreground app → DNS correlation)
+    NETWORK_ATTRIBUTION_ENABLED: bool = True
+    NETWORK_ATTRIBUTION_MAX_AGE_SEC: int = 120
+    NETWORK_ATTRIBUTION_RETENTION_DAYS: int = 30
+    CLIENT_ATTRIBUTION_PATH: str = "/v1/network-attribution"
+    CLIENT_ATTRIBUTION_POLL_SEC: float = 30.0
+    CLIENT_ATTRIBUTION_REPORT_SEC: float = 60.0
+
     # Reject VPN enroll when login GeoIP is in these countries (comma or JSON list), e.g. IR
     VPN_LOGIN_GEO_BLOCK_ENABLED: bool = True
     BLOCKED_VPN_LOGIN_COUNTRIES: str = "IR"

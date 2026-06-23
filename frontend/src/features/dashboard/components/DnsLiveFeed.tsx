@@ -16,8 +16,13 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { useDnsLiveFeed, LiveDnsQuery } from '../../dns-queries/hooks/useDnsLiveFeed';
 import { formatTime } from '../../../shared/utils/dateUtils';
+import { getAppIconStyle } from '../../network-map/utils/appIcons';
 
 function QueryRow({ query }: { query: LiveDnsQuery }) {
+  const appStyle = query.attributed_app_display_name
+    ? getAppIconStyle(query.attributed_app_slug)
+    : null;
+
   return (
     <ListItem
       sx={{
@@ -56,6 +61,21 @@ function QueryRow({ query }: { query: LiveDnsQuery }) {
             >
               {query.domain}
             </Typography>
+            {appStyle && query.attributed_app_display_name && (
+              <Tooltip title="Attributed to foreground app at query time (endpoint telemetry)">
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  icon={
+                    <Box component="span" sx={{ display: 'flex', color: appStyle.color, ml: 0.5 }}>
+                      {appStyle.icon}
+                    </Box>
+                  }
+                  label={query.attributed_app_display_name}
+                  sx={{ maxWidth: 140, flexShrink: 0 }}
+                />
+              </Tooltip>
+            )}
             <Typography
               variant="caption"
               sx={{
