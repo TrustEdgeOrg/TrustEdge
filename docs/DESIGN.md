@@ -8,14 +8,28 @@ For setup and deployment, see the [main README](../README.md). For environment v
 
 ## Product goals
 
-TrustEdge is a **self-hosted network security platform** (VPN + DNS policy + behavior intelligence + optional AI summaries) for teams, branch sites, and operators who want SASE-style control without enterprise complexity. The core promise:
+TrustEdge is a **self-hosted network digital twin** (VPN + live telemetry + behavior baselines + optional enforcement) for teams, branch sites, and operators who want SASE-style visibility without enterprise complexity. The core promise:
 
-1. **Secure access** — Clients enroll on WireGuard; DNS and policy enforcement run on a central server you control.
-2. **Policy, not lists** — Domains are blocked via policy packs, device profiles, schedules, geo rules, and behavior scoring — not ad-hoc block lists in the UI.
-3. **Behavior-aware** — Per-device baselines and abnormal scores drive alerts and optional auto-blocks; rules-based scoring, not LLM judgment.
-4. **AI-assisted explanations** *(optional)* — OpenAI or Ollama can summarize network overview and per-device behavior for operators; falls back to templates when AI is off or unavailable.
-5. **Live visibility** — DNS queries stream to the dashboard over WebSocket; blocked events and anomalies are surfaced in real time.
-6. **Actionable enforcement** — Admin actions (quarantine, per-device blocks, policy apply) propagate to host networking (iptables, dnsmasq) through a deliberate split between container and host.
+1. **Live mirror** — Clients enroll on WireGuard; DNS, apps, and connectivity are mirrored in real time (network map, client map, telemetry feed).
+2. **What-if before apply** — Policy pack changes can be simulated against recent DNS activity before syncing to dnsmasq.
+3. **Policy as desired state** — Domains are controlled via policy packs, device profiles, schedules, geo rules, and behavior scoring — not ad-hoc block lists in the UI.
+4. **Behavior-aware drift** — Per-device baselines and abnormal scores surface drift; rules-based scoring, not LLM judgment.
+5. **AI-assisted explanations** *(optional)* — OpenAI or Ollama can summarize network overview and per-device behavior for operators; falls back to templates when AI is off or unavailable.
+6. **Enforcement as actuator** — Admin actions (quarantine, per-device blocks, policy apply) propagate to host networking (iptables, dnsmasq) when operators choose to remediate.
+
+---
+
+## Digital twin model
+
+| Layer | Source | Dashboard |
+|-------|--------|-----------|
+| Connectivity | WireGuard peers, usage samples | Client map, live throughput |
+| Application | Foreground app reports (TrustEdgeClient) | Network map |
+| DNS telemetry | dnsmasq log ingest + `domain_first_seen` recency | Live feed, simulation lookback |
+| Desired state | Policy profiles and packs in RDS | Policy page (+ preview) |
+| Drift | Behavior baselines vs live scoring | Client profiles |
+
+Simulation (`POST /twin/simulate/pack-toggle`) compares **proposed policy** against **observed DNS roots** (last 24h) without writing to RDS or reloading dnsmasq.
 
 ---
 

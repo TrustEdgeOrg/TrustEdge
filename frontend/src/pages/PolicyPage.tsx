@@ -12,7 +12,9 @@ import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import ScienceIcon from '@mui/icons-material/Science';
 import PolicyPackDomainsDialog from '../features/policy/components/PolicyPackDomainsDialog';
+import PackTogglePreviewDialog from '../features/twin/components/PackTogglePreviewDialog';
 import { policyApi } from '../features/policy/config/api';
 import { PolicyPack, PolicyProfile } from '../features/policy/types/policy';
 import { usePolicyDnsSync } from '../features/policy/hooks/usePolicyDnsSync';
@@ -25,6 +27,7 @@ export default function PolicyPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [savingSlug, setSavingSlug] = useState<string | null>(null);
   const [viewPack, setViewPack] = useState<PolicyPack | null>(null);
+  const [previewPack, setPreviewPack] = useState<PolicyPack | null>(null);
 
   const {
     syncStatusLabel,
@@ -76,6 +79,17 @@ export default function PolicyPage() {
     }
   };
 
+  const applyPackFromPreview = async (pack: PolicyPack, enabledGlobally: boolean) => {
+    setSavingSlug(pack.slug);
+    setInfo(null);
+    const updated = await policyApi.updatePack(pack.slug, enabledGlobally);
+    setPacks((prev) => prev.map((p) => (p.slug === updated.slug ? updated : p)));
+    setInfo(
+      `${updated.name} saved. Enforcement sync runs automatically (dns-sync + dnsmasq reload).`,
+    );
+    setSavingSlug(null);
+  };
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -92,7 +106,8 @@ export default function PolicyPage() {
             Policy
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            List packs and device profiles. Changes sync to dnsmasq via the host listener.
+            Preview impact on live traffic before applying desired state. Changes sync to dnsmasq via
+            the host listener when applied.
           </Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
             {syncStatusLabel}
@@ -143,7 +158,8 @@ export default function PolicyPage() {
               List packs (network-wide)
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-              View each category to browse blocked domains. Turn packs On to enforce via dnsmasq.
+              View each category to browse blocked domains. Use Preview impact before toggling
+              enforcement.
             </Typography>
           </Box>
         </Stack>
@@ -182,6 +198,15 @@ export default function PolicyPage() {
                   <Button
                     size="small"
                     variant="outlined"
+                    startIcon={<ScienceIcon />}
+                    disabled={packBusy}
+                    onClick={() => setPreviewPack(pack)}
+                  >
+                    Preview impact
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
                     color="primary"
                     startIcon={<VisibilityIcon />}
                     disabled={packBusy}
@@ -198,7 +223,7 @@ export default function PolicyPage() {
                         onChange={() => togglePack(pack)}
                       />
                     }
-                    label={pack.enabled_globally ? 'On' : 'Off'}
+                    label={pack.enabled_globally ? 'Enforced' : 'Off'}
                   />
                 </Stack>
               </Stack>
@@ -212,6 +237,13 @@ export default function PolicyPage() {
         open={viewPack !== null}
         onClose={() => setViewPack(null)}
         onPackUpdated={handlePackUpdated}
+      />
+
+      <PackTogglePreviewDialog
+        pack={previewPack}
+        open={previewPack !== null}
+        onClose={() => setPreviewPack(null)}
+        onApply={applyPackFromPreview}
       />
 
       <Paper variant="outlined" sx={{ p: 2 }}>

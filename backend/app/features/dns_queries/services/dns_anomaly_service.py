@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -22,19 +22,23 @@ class DnsAnomalyService:
 
     def process_queries(self, queries: List[DnsQueryCreate]) -> int:
         created = 0
+        touched = False
         for query in queries:
             if is_noise_domain(query.domain):
                 continue
-            created += self._process_one(query)
-        if created:
+            alerts, did_touch = self._process_one(query)
+            created += alerts
+            touched = touched or did_touch
+        if created or touched:
             self.db.commit()
-            logger.warning(
-                "DNS anomaly alerts created",
-                extra=structured_extra("dns_anomaly_alerts", count=created),
-            )
+            if created:
+                logger.warning(
+                    "DNS anomaly alerts created",
+                    extra=structured_extra("dns_anomaly_alerts", count=created),
+                )
         return created
 
-    def _process_one(self, query: DnsQueryCreate) -> int:
+    def _process_one(self, query: DnsQueryCreate) -> Tuple[int, bool]:
         alerts = 0
         root = extract_root_domain(query.domain)
 
@@ -51,23 +55,20 @@ class DnsAnomalyService:
             alerts += 1
 
         existing = self.first_seen_repo.get(query.client_ip, root)
-        if existing is None:
-            self.first_seen_repo.record_first_seen(
-                query.client_ip,
-                root,
-                query.timestamp,
+        is_new = existing is None
+        touched = self.first_seen_repo.touch(query.client_ip, root, query.timestamp)
+
+        if is_new and settings.NEW_DOMAIN_ALERTS:
+            self.alert_repo.create(
+                timestamp=query.timestamp,
+                client_ip=query.client_ip,
+                alert_type="new_domain",
+                severity="low",
+                domain=query.domain,
+                root_domain=root,
+                message=f"First visit to {root} from {query.client_ip}",
             )
-            if settings.NEW_DOMAIN_ALERTS:
-                self.alert_repo.create(
-                    timestamp=query.timestamp,
-                    client_ip=query.client_ip,
-                    alert_type="new_domain",
-                    severity="low",
-                    domain=query.domain,
-                    root_domain=root,
-                    message=f"First visit to {root} from {query.client_ip}",
-                )
-                alerts += 1
+            alerts += 1
 
         suspicious_reasons = get_suspicious_domain_reasons(query.domain)
         if suspicious_reasons:
@@ -82,4 +83,4 @@ class DnsAnomalyService:
             )
             alerts += 1
 
-        return alerts
+        return alerts, touched

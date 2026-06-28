@@ -41,7 +41,7 @@ const manageNetworkItems = [
 
 const analyticsItems = [
   { text: 'Client profiles', icon: <DevicesOtherIcon />, path: '/client-profiles', iconClass: 'clientProfilesIcon' },
-  { text: 'Blocked clients', icon: <BlockIcon />, path: '/blocked-clients', iconClass: 'blockedClientsIcon' },
+  { text: 'Policy violations', icon: <BlockIcon />, path: '/blocked-clients', iconClass: 'blockedClientsIcon' },
   // TODO: add Reports & Activity Logs when implemented
 ];
 

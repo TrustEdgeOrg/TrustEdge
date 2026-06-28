@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Set
+from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
@@ -25,11 +25,15 @@ class PolicyDnsService:
         self.block_repo = ClientBlockedDomainRepository(db)
         self.forbidden_country = ForbiddenCountryService(db)
 
-    def build_dns_sync(self) -> PolicyDnsSyncResponse:
+    def build_dns_sync(
+        self,
+        *,
+        global_pack_overrides: Optional[Dict[str, bool]] = None,
+    ) -> PolicyDnsSyncResponse:
         """Build dnsmasq rules: global_domains apply to all VPN/LAN DNS clients."""
         self.policy_repo.end_expired_quarantines()
         packs = self.policy_repo.list_packs()
-        global_slugs = [p.slug for p in packs if p.enabled_globally]
+        global_slugs = self._global_pack_slugs(packs, global_pack_overrides)
         global_domains = sorted(domains_for_packs(global_slugs))
 
         entries: List[PolicyDeviceDnsEntry] = []
@@ -96,6 +100,17 @@ class PolicyDnsService:
             )
 
         return PolicyDnsSyncResponse(global_domains=global_domains, entries=entries)
+
+    @staticmethod
+    def _global_pack_slugs(packs, global_pack_overrides: Optional[Dict[str, bool]]) -> List[str]:
+        slugs: List[str] = []
+        for pack in packs:
+            enabled = pack.enabled_globally
+            if global_pack_overrides is not None and pack.slug in global_pack_overrides:
+                enabled = global_pack_overrides[pack.slug]
+            if enabled:
+                slugs.append(pack.slug)
+        return slugs
 
     @staticmethod
     def _device_client_ip(device) -> str:

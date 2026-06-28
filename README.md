@@ -1,6 +1,6 @@
 # TrustEdge
 
-**Self-hosted network security platform** — secure VPN access, DNS policy enforcement, real-time monitoring, behavior analytics, and optional AI-assisted operations.
+**Self-hosted network digital twin** — live mirror of VPN clients, apps, and DNS activity, with what-if policy simulation, behavior baselines, and optional enforcement.
 
 Built end-to-end: React dashboard, FastAPI backend, WireGuard enrollment client, host-level enforcement agents, and AWS production deployment with CI/CD.
 
@@ -10,9 +10,9 @@ Built end-to-end: React dashboard, FastAPI backend, WireGuard enrollment client,
 
 ## Overview
 
-Most network security tools are either enterprise appliances with heavy lock-in, or consumer DNS blockers with no real visibility. TrustEdge sits in between: a **self-hosted SASE-style stack** you operate on your own infrastructure.
+Most network security tools are either enterprise appliances with heavy lock-in, or consumer DNS blockers with no real visibility. TrustEdge is a **self-hosted network digital twin**: it mirrors live client connectivity, application attribution, and DNS telemetry, and lets operators **preview policy impact** before applying changes.
 
-Clients enroll over **WireGuard**. DNS flows through a central policy engine (dnsmasq + custom sync). The dashboard streams live queries over **WebSocket**, scores per-device behavior against baselines, and can quarantine clients at the network layer (iptables + DNS deny). Optional **LLM summaries** (OpenAI or Ollama) explain network and device state — detection stays rules-based.
+Clients enroll over **WireGuard**. DNS flows through a central policy engine (dnsmasq + custom sync). The dashboard streams live queries over **WebSocket**, scores per-device behavior against baselines, and surfaces twin views (network map, client map). Enforcement (quarantine, DNS blocks) is available when needed. Optional **LLM summaries** (OpenAI or Ollama) explain network and device state — detection stays rules-based.
 
 The system is deployed on **AWS** (EC2, RDS, S3, CloudFront, ECR) with GitHub Actions pipelines, structured CloudWatch logging, and a deliberate **container vs. host** split for WireGuard and dnsmasq operations.
 
@@ -22,11 +22,12 @@ The system is deployed on **AWS** (EC2, RDS, S3, CloudFront, ECR) with GitHub Ac
 
 | Capability | Implementation |
 |------------|----------------|
+| Digital twin | Network map, client map, live telemetry, 24h DNS recency |
+| What-if simulation | Preview global pack toggle impact before apply |
 | Secure access | WireGuard VPN, device enrollment API, IP pool allocation |
-| DNS policy | Policy packs, per-device profiles, schedules, geo/country rules |
-| Real-time monitoring | WebSocket live feed, Redis-backed throughput charts |
-| Behavior intelligence | Per-device baselines, abnormal scoring, auto-block |
-| Enforcement | Host agent (iptables quarantine), dns-sync → dnsmasq reload |
+| Desired-state policy | Policy packs, per-device profiles, schedules, geo/country rules |
+| Behavior intelligence | Per-device baselines, drift scoring, optional auto-block |
+| Enforcement (actuator) | Host agent (iptables quarantine), dns-sync → dnsmasq reload |
 | AI operations | Network overview + behavior review (template / OpenAI / Ollama) |
 | Production ops | Structured JSON logs → CloudWatch, Alembic migrations, ECR deploy |
 

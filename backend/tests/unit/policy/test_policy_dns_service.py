@@ -67,3 +67,15 @@ def test_behavior_quarantine_keeps_allowlist(db_session):
     entry = next(e for e in result.entries if e.device_id == device.id)
     assert entry.allowlist_only is True
     assert len(entry.allowlist_domains) > 0
+
+
+def test_build_dns_sync_respects_global_pack_overrides(db_session):
+    seed_policy_catalog(db_session)
+    create_vpn_device(db_session, mac_address="11:22:33:44:55:77")
+    svc = PolicyDnsService(db_session)
+
+    baseline = svc.build_dns_sync()
+    proposed = svc.build_dns_sync(global_pack_overrides={"social": True})
+
+    assert "facebook.com" not in baseline.global_domains
+    assert "facebook.com" in proposed.global_domains
