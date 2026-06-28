@@ -30,7 +30,7 @@ export default function MainGrid() {
       <Grid container spacing={2} columns={12} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12 }}>
           <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
-            Live network
+            Live telemetry
           </Typography>
           <Paper variant="outlined">
             <LiveNetworkGraph
@@ -68,7 +68,7 @@ export default function MainGrid() {
                 variant="text"
                 startIcon={<HubIcon fontSize="small" />}
               >
-                Network map
+                Twin: network map
               </Button>
               <Button
                 component={RouterLink}
@@ -77,7 +77,7 @@ export default function MainGrid() {
                 variant="text"
                 startIcon={<MapIcon fontSize="small" />}
               >
-                Client map
+                Twin: client map
               </Button>
             </Stack>
           </Stack>
@@ -85,13 +85,16 @@ export default function MainGrid() {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <Typography component="h2" variant="h6" sx={{ mb: 2 }}>
-            Live DNS Feed
+            Live telemetry feed
           </Typography>
           <DnsLiveFeed />
         </Grid>
       </Grid>
 
-      <Grid container spacing={2} columns={12} sx={{ mt: 4, alignItems: 'stretch' }}>
+      <Typography component="h2" variant="h6" sx={{ mt: 4, mb: 2 }}>
+        Enforcement
+      </Typography>
+      <Grid container spacing={2} columns={12} sx={{ alignItems: 'stretch' }}>
         <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
           <Box sx={{ width: '100%' }}>
             <DnsAlertsView />

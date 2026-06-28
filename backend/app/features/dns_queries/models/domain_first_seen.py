@@ -10,6 +10,7 @@ class DomainFirstSeen(Base):
     client_ip = Column(String(45), nullable=False, index=True)
     root_domain = Column(String(255), nullable=False, index=True)
     first_seen_at = Column(DateTime(timezone=True), nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

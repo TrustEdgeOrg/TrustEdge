@@ -16,6 +16,8 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>` when the token
 | `GET` | `/policy/profiles` | List policy profiles |
 | `GET` | `/policy/dns-sync` | Effective DNS block rules for dnsmasq |
 | `POST` | `/policy/apply` | Queue policy sync to dnsmasq |
+| **Digital Twin** | | |
+| `POST` | `/twin/simulate/pack-toggle` | Preview global pack toggle impact (read-only) |
 | **Devices** | | |
 | `GET` | `/devices` | List devices |
 | `GET` | `/devices/blocked-clients` | Devices with active quarantine or per-device DNS blocks |
