@@ -16,6 +16,35 @@ function edgeKey(edge: NetworkMapEdge): string {
   return `${edge.source}|${edge.target}|${edge.kind}`;
 }
 
+export function filterQueriesWithinMinutes(
+  queries: LiveDnsAttributed[],
+  minutes: number,
+  nowMs = Date.now(),
+): LiveDnsAttributed[] {
+  const cutoff = nowMs - minutes * 60 * 1000;
+  return queries.filter((query) => {
+    const ts = Date.parse(query.timestamp);
+    return !Number.isNaN(ts) && ts >= cutoff;
+  });
+}
+
+export function buildLiveMapFromQueries(
+  queries: LiveDnsAttributed[],
+  minutes: number,
+  ipToDevice: Map<string, DeviceLookup>,
+): NetworkMapResponse {
+  const base: NetworkMapResponse = {
+    generated_at: new Date().toISOString(),
+    minutes,
+    nodes: [],
+    edges: [],
+  };
+  return queries.reduce(
+    (graph, query) => mergeLiveQueryIntoMap(graph, query, ipToDevice),
+    base,
+  );
+}
+
 export function mergeLiveQueryIntoMap(
   graph: NetworkMapResponse,
   query: LiveDnsAttributed,

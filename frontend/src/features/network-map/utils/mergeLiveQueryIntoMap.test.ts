@@ -1,4 +1,4 @@
-import { mergeLiveQueryIntoMap } from './mergeLiveQueryIntoMap';
+import { buildLiveMapFromQueries, filterQueriesWithinMinutes, mergeLiveQueryIntoMap } from './mergeLiveQueryIntoMap';
 import { NetworkMapResponse } from '../types/networkMap';
 
 const emptyMap: NetworkMapResponse = {
@@ -77,5 +77,37 @@ describe('mergeLiveQueryIntoMap', () => {
 
     const dnsEdge = merged.edges.find((e) => e.kind === 'dns');
     expect(dnsEdge?.query_count).toBe(2);
+  });
+});
+
+describe('filterQueriesWithinMinutes', () => {
+  it('drops queries older than the window', () => {
+    const now = Date.parse('2026-06-29T12:00:00Z');
+    const queries = [
+      {
+        timestamp: '2026-06-29T11:58:30Z',
+        client_ip: '10.0.0.2',
+        domain: 'old.example.com',
+        blocked: false,
+      },
+      {
+        timestamp: '2026-06-29T11:59:10Z',
+        client_ip: '10.0.0.2',
+        domain: 'fresh.example.com',
+        blocked: false,
+      },
+    ];
+
+    const filtered = filterQueriesWithinMinutes(queries, 1, now);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].domain).toBe('fresh.example.com');
+  });
+});
+
+describe('buildLiveMapFromQueries', () => {
+  it('builds a graph from an empty query list', () => {
+    const graph = buildLiveMapFromQueries([], 1, new Map());
+    expect(graph.minutes).toBe(1);
+    expect(graph.nodes).toHaveLength(0);
   });
 });

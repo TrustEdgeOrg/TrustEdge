@@ -147,7 +147,7 @@ class NetworkAttributionService:
         ]
         return AppUsageSummaryResponse(device_id=device_id, hours=hours, items=items)
 
-    def build_map(self, *, minutes: int = 15) -> NetworkMapResponse:
+    def build_map(self, *, minutes: int = 1) -> NetworkMapResponse:
         minutes = max(1, min(minutes, 60))
         now = datetime.now(timezone.utc)
         since = now - timedelta(minutes=minutes)
@@ -158,7 +158,7 @@ class NetworkAttributionService:
 
         contexts = (
             self.db.query(DeviceNetworkContext)
-            .filter(DeviceNetworkContext.observed_at >= since - timedelta(seconds=max_age))
+            .filter(DeviceNetworkContext.observed_at >= since)
             .all()
         )
         dns_rows = (

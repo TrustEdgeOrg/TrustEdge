@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDnsQueriesWebSocketUrl } from '../../../shared/config/apiWebSocketUrl';
 import { devicesApi } from '../../devices/config/api';
-import { fetchNetworkAttributionMap } from '../config/api';
-import { mergeLiveQueryIntoMap } from '../utils/mergeLiveQueryIntoMap';
+import {
+  DEFAULT_NETWORK_MAP_MINUTES,
+  DEFAULT_NETWORK_MAP_POLL_SEC,
+  fetchNetworkAttributionMap,
+} from '../config/api';
+import {
+  buildLiveMapFromQueries,
+  filterQueriesWithinMinutes,
+  LiveDnsAttributed,
+} from '../utils/mergeLiveQueryIntoMap';
 import { mergeMapSnapshots } from '../utils/mergeMapSnapshots';
 import { NetworkMapResponse } from '../types/networkMap';
 
@@ -15,12 +23,30 @@ function emptyMap(minutes: number): NetworkMapResponse {
   };
 }
 
-export function useNetworkAttributionMap(minutes = 15, pollSec = 30) {
+export function useNetworkAttributionMap(
+  minutes = DEFAULT_NETWORK_MAP_MINUTES,
+  pollSec = DEFAULT_NETWORK_MAP_POLL_SEC,
+) {
   const [data, setData] = useState<NetworkMapResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveConnected, setLiveConnected] = useState(false);
   const ipToDeviceRef = useRef(new Map<string, { deviceId: number; label: string }>());
+  const liveQueriesRef = useRef<LiveDnsAttributed[]>([]);
+  const apiSnapshotRef = useRef<NetworkMapResponse | null>(null);
+  const minutesRef = useRef(minutes);
+  minutesRef.current = minutes;
+
+  const mergeApiAndLive = useCallback((api: NetworkMapResponse) => {
+    const windowMinutes = minutesRef.current;
+    liveQueriesRef.current = filterQueriesWithinMinutes(liveQueriesRef.current, windowMinutes);
+    const liveGraph = buildLiveMapFromQueries(
+      liveQueriesRef.current,
+      windowMinutes,
+      ipToDeviceRef.current,
+    );
+    return mergeMapSnapshots(api, liveGraph.nodes.length > 0 || liveGraph.edges.length > 0 ? liveGraph : null);
+  }, []);
 
   const loadDeviceIndex = useCallback(async () => {
     try {
@@ -53,15 +79,18 @@ export function useNetworkAttributionMap(minutes = 15, pollSec = 30) {
           });
         }
       }
-      setData((prev) => mergeMapSnapshots(response, prev));
+      apiSnapshotRef.current = response;
+      setData(mergeApiAndLive(response));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load network map');
     } finally {
       setLoading(false);
     }
-  }, [minutes, loadDeviceIndex]);
+  }, [minutes, loadDeviceIndex, mergeApiAndLive]);
 
   useEffect(() => {
+    liveQueriesRef.current = [];
+    apiSnapshotRef.current = null;
     load();
     const timer = window.setInterval(load, pollSec * 1000);
     return () => window.clearInterval(timer);
@@ -80,25 +109,25 @@ export function useNetworkAttributionMap(minutes = 15, pollSec = 30) {
       try {
         const payload = JSON.parse(event.data) as {
           type?: string;
-          queries?: Parameters<typeof mergeLiveQueryIntoMap>[1][];
+          queries?: LiveDnsAttributed[];
         };
         if (payload.type !== 'dns_queries' || !payload.queries?.length) {
           return;
         }
-        setData((prev) => {
-          const base = prev ?? emptyMap(minutes);
-          return payload.queries!.reduce(
-            (graph, query) => mergeLiveQueryIntoMap(graph, query, ipToDeviceRef.current),
-            base,
-          );
-        });
+        const windowMinutes = minutesRef.current;
+        liveQueriesRef.current = filterQueriesWithinMinutes(
+          [...payload.queries, ...liveQueriesRef.current],
+          windowMinutes,
+        );
+        const api = apiSnapshotRef.current ?? emptyMap(windowMinutes);
+        setData(mergeApiAndLive(api));
       } catch {
         // ignore malformed messages
       }
     };
 
     return () => ws.close();
-  }, [minutes]);
+  }, [minutes, mergeApiAndLive]);
 
   useEffect(() => {
     loadDeviceIndex();
