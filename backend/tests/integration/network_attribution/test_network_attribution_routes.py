@@ -109,3 +109,36 @@ def test_network_attribution_map(
     assert "domain" in node_types
     assert any(n.get("app_slug") == "zoom" for n in body["nodes"] if n["type"] == "app")
     assert any(e["kind"] == "dns" for e in body["edges"])
+
+
+def test_network_attribution_map_groups_by_root_domain(
+    api_client,
+    enroll_env,
+    seed_policy,
+    mock_apply_peer_on_host,
+    mock_record_vpn_enroll,
+    enroll_device,
+    dns_ingest_env,
+):
+    enroll = enroll_device(device_id="attr-map-root", public_key="attrMapRootKey=")
+    token = enroll.json()["device_token"]
+    client_ip = enroll.json()["address"].split("/")[0]
+
+    api_client.post(
+        "/v1/network-attribution",
+        json=_attribution_payload("attr-map-root"),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    api_client.post("/dns-queries", json=dns_query_payload(client_ip=client_ip, domain="www.zoom.us"))
+    api_client.post("/dns-queries", json=dns_query_payload(client_ip=client_ip, domain="meeting.zoom.us"))
+
+    response = api_client.get("/network-attribution/map", params={"minutes": 15})
+    assert response.status_code == 200
+    body = response.json()
+    domain_nodes = [n for n in body["nodes"] if n["type"] == "domain"]
+    assert len(domain_nodes) == 1
+    assert domain_nodes[0]["label"] == "zoom.us"
+
+    dns_edges = [e for e in body["edges"] if e["kind"] == "dns"]
+    assert len(dns_edges) == 1
+    assert dns_edges[0]["query_count"] == 2
