@@ -44,6 +44,7 @@ export default function NetworkMapPage() {
           TrustEdge correlates live DNS queries with the macOS foreground app reported by the VPN client.
           Each arc is logical attribution—not a packet capture—but it answers:{' '}
           <em>which app was active when this DNS lookup happened?</em>
+          Use <strong>What-if</strong> to select a process and preview which destinations would lose access if it were disabled.
         </Typography>
         <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
           <Chip size="small" variant="outlined" label="Teal device = endpoint" />

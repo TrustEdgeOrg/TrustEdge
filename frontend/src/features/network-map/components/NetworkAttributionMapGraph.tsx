@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
@@ -6,12 +6,23 @@ import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import { alpha, keyframes, useTheme } from '@mui/material/styles';
 import HubIcon from '@mui/icons-material/Hub';
+import ScienceIcon from '@mui/icons-material/Science';
+import BlockIcon from '@mui/icons-material/Block';
 import { useNetworkAttributionMap } from '../hooks/useNetworkAttributionMap';
+import { DEFAULT_NETWORK_MAP_MINUTES } from '../config/api';
 import { edgePath, layoutNetworkMap, shortenLabel } from '../utils/layoutNetworkMap';
 import { getAppIconStyle, getDeviceIconStyle, getDomainIconStyle } from '../utils/appIcons';
-import { NetworkMapEdge, PositionedNode } from '../types/networkMap';
+import { NetworkMapEdge, NetworkMapNode, PositionedNode } from '../types/networkMap';
+import {
+  computeWhatIfSimulation,
+  edgeKey,
+  toggleDisabledApp,
+} from '../utils/whatIfSimulation';
 
 const NODE_R = 11;
 const ICON_SIZE = 13;
@@ -22,39 +33,75 @@ const flowPulse = keyframes`
   }
 `;
 
-function MapNodeGlyph({ node }: { node: PositionedNode }) {
+interface MapNodeGlyphProps {
+  node: PositionedNode;
+  whatIfMode: boolean;
+  appDisabled: boolean;
+  simulatedBlocked: boolean;
+  onSelectApp?: (nodeId: string) => void;
+}
+
+function MapNodeGlyph({
+  node,
+  whatIfMode,
+  appDisabled,
+  simulatedBlocked,
+  onSelectApp,
+}: MapNodeGlyphProps) {
   const theme = useTheme();
   const style =
     node.type === 'device'
       ? getDeviceIconStyle()
       : node.type === 'app'
         ? getAppIconStyle(node.app_slug)
-        : getDomainIconStyle(node.blocked);
+        : getDomainIconStyle(node.blocked || simulatedBlocked);
 
-  const ring =
-    node.type === 'device' && node.fresh
+  const ring = appDisabled
+    ? theme.palette.error.main
+    : node.type === 'device' && node.fresh
       ? theme.palette.success.main
-      : node.type === 'domain' && node.blocked
+      : node.type === 'domain' && (node.blocked || simulatedBlocked)
         ? theme.palette.error.main
         : alpha(style.color, 0.85);
 
-  const tooltip =
+  const tooltipParts = [
     node.type === 'app'
       ? `${node.label} (foreground process)`
       : node.type === 'domain'
-        ? `${node.label}${node.blocked ? ' · blocked' : ''}`
-        : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`;
+        ? `${node.label}${node.blocked ? ' · blocked' : ''}${simulatedBlocked ? ' · would lose access (what-if)' : ''}`
+        : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`,
+  ];
+  if (whatIfMode && node.type === 'app') {
+    tooltipParts.push(appDisabled ? 'Click to re-enable in what-if' : 'Click to disable in what-if');
+  }
+
+  const selectable = whatIfMode && node.type === 'app';
 
   return (
-    <g transform={`translate(${node.x}, ${node.y})`} style={{ cursor: 'default' }}>
-      <title>{tooltip}</title>
+    <g
+      transform={`translate(${node.x}, ${node.y})`}
+      style={{ cursor: selectable ? 'pointer' : 'default', opacity: appDisabled ? 0.45 : 1 }}
+      onClick={selectable ? () => onSelectApp?.(node.id) : undefined}
+    >
+      <title>{tooltipParts.join(' · ')}</title>
       <circle
         r={NODE_R + 3}
         fill={theme.palette.background.paper}
         stroke={ring}
-        strokeWidth={node.type === 'device' && node.fresh ? 1.75 : 1.25}
+        strokeWidth={appDisabled ? 2 : node.type === 'device' && node.fresh ? 1.75 : 1.25}
+        strokeDasharray={appDisabled ? '3 2' : undefined}
       />
       <circle r={NODE_R} fill={style.bg} />
+      {appDisabled && (
+        <line
+          x1={-NODE_R}
+          y1={-NODE_R}
+          x2={NODE_R}
+          y2={NODE_R}
+          stroke={theme.palette.error.main}
+          strokeWidth={2}
+        />
+      )}
       <foreignObject
         x={-ICON_SIZE / 2}
         y={-ICON_SIZE / 2}
@@ -81,9 +128,16 @@ function MapNodeGlyph({ node }: { node: PositionedNode }) {
   );
 }
 
-function edgeTooltip(edge: NetworkMapEdge, nodes: Map<string, PositionedNode>): string {
+function edgeTooltip(
+  edge: NetworkMapEdge,
+  nodes: Map<string, PositionedNode>,
+  simulatedCut: boolean,
+): string {
   const source = nodes.get(edge.source)?.label ?? edge.source;
   const target = nodes.get(edge.target)?.label ?? edge.target;
+  if (simulatedCut) {
+    return `${source} → ${target} · cut by what-if (app disabled)`;
+  }
   if (edge.kind === 'foreground') {
     return `${source} → ${target} (foreground app)`;
   }
@@ -101,11 +155,13 @@ interface NetworkAttributionMapGraphProps {
 }
 
 export default function NetworkAttributionMapGraph({
-  minutes = 15,
+  minutes = DEFAULT_NETWORK_MAP_MINUTES,
   showHeader = true,
 }: NetworkAttributionMapGraphProps) {
   const theme = useTheme();
   const { data, loading, error, liveConnected } = useNetworkAttributionMap(minutes);
+  const [whatIfMode, setWhatIfMode] = useState(false);
+  const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
 
   const layout = useMemo(() => {
     if (!data) {
@@ -119,6 +175,37 @@ export default function NetworkAttributionMapGraph({
     layout?.nodes.forEach((n) => map.set(n.id, n));
     return map;
   }, [layout]);
+
+  const whatIf = useMemo(() => {
+    if (!data || !whatIfMode) {
+      return null;
+    }
+    return computeWhatIfSimulation(data.nodes, data.edges, disabledAppIds);
+  }, [data, whatIfMode, disabledAppIds]);
+
+  const appNodes = useMemo(
+    () => (data?.nodes.filter((n) => n.type === 'app') ?? []) as NetworkMapNode[],
+    [data],
+  );
+
+  const disabledAppLabels = useMemo(() => {
+    if (!data || disabledAppIds.size === 0) {
+      return [];
+    }
+    const byId = new Map(data.nodes.map((n) => [n.id, n.label]));
+    return [...disabledAppIds].map((id) => byId.get(id) ?? id);
+  }, [data, disabledAppIds]);
+
+  const handleToggleApp = (appNodeId: string) => {
+    setDisabledAppIds((prev) => toggleDisabledApp(prev, appNodeId));
+  };
+
+  const handleWhatIfModeChange = (enabled: boolean) => {
+    setWhatIfMode(enabled);
+    if (!enabled) {
+      setDisabledAppIds(new Set());
+    }
+  };
 
   const deviceCount = data?.nodes.filter((n) => n.type === 'device').length ?? 0;
   const appCount = data?.nodes.filter((n) => n.type === 'app').length ?? 0;
@@ -141,12 +228,57 @@ export default function NetworkAttributionMapGraph({
         </Stack>
       )}
 
-      <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
-        <Chip size="small" variant="outlined" label={`${deviceCount} devices`} />
-        <Chip size="small" variant="outlined" label={`${appCount} apps`} />
-        <Chip size="small" variant="outlined" label={`${domainCount} destinations`} />
-        {data && <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />}
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'flex-start', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 1.5 }}
+      >
+        <Stack direction="row" flexWrap="wrap" gap={0.75}>
+          <Chip size="small" variant="outlined" label={`${deviceCount} devices`} />
+          <Chip size="small" variant="outlined" label={`${appCount} apps`} />
+          <Chip size="small" variant="outlined" label={`${domainCount} destinations`} />
+          {data && <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />}
+        </Stack>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={whatIfMode}
+              onChange={(_, checked) => handleWhatIfModeChange(checked)}
+            />
+          }
+          label={
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <ScienceIcon sx={{ fontSize: 16 }} />
+              <Typography variant="body2">What-if</Typography>
+            </Stack>
+          }
+          sx={{ m: 0 }}
+        />
       </Stack>
+
+      {whatIfMode && (
+        <Alert severity="info" sx={{ mb: 1.5 }} icon={<ScienceIcon fontSize="small" />}>
+          {disabledAppIds.size === 0 ? (
+            <>Select a process below or on the map to simulate it being disabled.</>
+          ) : (
+            <>
+              Simulating disabled: <strong>{disabledAppLabels.join(', ')}</strong>
+              {' · '}
+              {whatIf?.affectedQueryCount ?? 0} DNS quer{(whatIf?.affectedQueryCount ?? 0) === 1 ? 'y' : 'ies'} cut
+              {' · '}
+              {whatIf?.affectedDomainCount ?? 0} destination{(whatIf?.affectedDomainCount ?? 0) === 1 ? '' : 's'} would lose access
+            </>
+          )}
+          {disabledAppIds.size > 0 && (
+            <Button size="small" sx={{ ml: 1, mt: { xs: 1, sm: 0 } }} onClick={() => setDisabledAppIds(new Set())}>
+              Clear
+            </Button>
+          )}
+        </Alert>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
@@ -154,12 +286,41 @@ export default function NetworkAttributionMapGraph({
         </Alert>
       )}
 
+      {whatIfMode && appNodes.length > 0 && (
+        <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
+          {appNodes.map((app) => {
+            const selected = disabledAppIds.has(app.id);
+            const icon = getAppIconStyle(app.app_slug);
+            return (
+              <Chip
+                key={app.id}
+                size="small"
+                variant={selected ? 'filled' : 'outlined'}
+                color={selected ? 'error' : 'default'}
+                icon={
+                  selected ? (
+                    <BlockIcon sx={{ fontSize: 14 }} />
+                  ) : (
+                    <Box component="span" sx={{ display: 'flex', color: icon.color, ml: 0.5 }}>
+                      {icon.icon}
+                    </Box>
+                  )
+                }
+                label={`${selected ? 'Disable ' : ''}${app.label}`}
+                onClick={() => handleToggleApp(app.id)}
+                sx={{ cursor: 'pointer' }}
+              />
+            );
+          })}
+        </Stack>
+      )}
+
       <Box
         sx={{
           position: 'relative',
           borderRadius: 1,
           overflow: 'hidden',
-          border: `1px solid ${theme.palette.divider}`,
+          border: `1px solid ${whatIfMode ? theme.palette.info.main : theme.palette.divider}`,
           bgcolor: landFill,
           minHeight: 300,
           '& .network-flow-active': {
@@ -203,9 +364,11 @@ export default function NetworkAttributionMapGraph({
               if (!from || !to) {
                 return null;
               }
-              const animated = edge.kind === 'dns' || edge.kind === 'dns_direct';
-              const stroke =
-                edge.kind === 'foreground'
+              const simulatedCut = whatIf?.disabledEdgeKeys.has(edgeKey(edge)) ?? false;
+              const animated = !simulatedCut && (edge.kind === 'dns' || edge.kind === 'dns_direct');
+              const stroke = simulatedCut
+                ? theme.palette.error.main
+                : edge.kind === 'foreground'
                   ? theme.palette.info.main
                   : edge.kind === 'dns_direct'
                     ? theme.palette.text.disabled
@@ -223,18 +386,33 @@ export default function NetworkAttributionMapGraph({
                       ? 1.25
                       : Math.min(3, 1 + Math.log2(edge.query_count + 1) * 0.6)
                   }
-                  strokeDasharray={edge.kind === 'dns_direct' ? '5 4' : undefined}
-                  opacity={edge.kind === 'foreground' ? 0.5 : edge.kind === 'dns_direct' ? 0.45 : 0.8}
+                  strokeDasharray={simulatedCut || edge.kind === 'dns_direct' ? '5 4' : undefined}
+                  opacity={
+                    simulatedCut
+                      ? 0.55
+                      : edge.kind === 'foreground'
+                        ? 0.5
+                        : edge.kind === 'dns_direct'
+                          ? 0.45
+                          : 0.8
+                  }
                   strokeLinecap="round"
                   className={animated ? 'network-flow-active' : undefined}
                 >
-                  <title>{edgeTooltip(edge, nodeMap)}</title>
+                  <title>{edgeTooltip(edge, nodeMap, simulatedCut)}</title>
                 </path>
               );
             })}
 
             {layout.nodes.map((node) => (
-              <MapNodeGlyph key={node.id} node={node} />
+              <MapNodeGlyph
+                key={node.id}
+                node={node}
+                whatIfMode={whatIfMode}
+                appDisabled={whatIfMode && disabledAppIds.has(node.id)}
+                simulatedBlocked={whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false}
+                onSelectApp={handleToggleApp}
+              />
             ))}
           </Box>
         )}
@@ -267,6 +445,14 @@ export default function NetworkAttributionMapGraph({
               label="Dashed = no app yet"
               sx={{ borderColor: 'text.disabled', color: 'text.secondary' }}
             />
+            {whatIfMode && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label="Red cut = what-if disabled"
+                sx={{ borderColor: 'error.main', color: 'error.main' }}
+              />
+            )}
           </Stack>
 
           <Box
@@ -283,20 +469,26 @@ export default function NetworkAttributionMapGraph({
                   ? getDeviceIconStyle()
                   : node.type === 'app'
                     ? getAppIconStyle(node.app_slug)
-                    : getDomainIconStyle(node.blocked);
+                    : getDomainIconStyle(
+                        node.blocked || (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false),
+                      );
+              const appDisabled = whatIfMode && disabledAppIds.has(node.id);
               return (
                 <Stack
                   key={node.id}
                   direction="row"
                   spacing={0.75}
                   alignItems="center"
+                  onClick={whatIfMode && node.type === 'app' ? () => handleToggleApp(node.id) : undefined}
                   sx={{
                     px: 1,
                     py: 0.5,
                     borderRadius: 1,
                     bgcolor: alpha(theme.palette.background.paper, 0.6),
-                    border: `1px solid ${theme.palette.divider}`,
+                    border: `1px solid ${appDisabled ? theme.palette.error.main : theme.palette.divider}`,
                     minWidth: 0,
+                    opacity: appDisabled ? 0.55 : 1,
+                    cursor: whatIfMode && node.type === 'app' ? 'pointer' : 'default',
                   }}
                 >
                   <Box

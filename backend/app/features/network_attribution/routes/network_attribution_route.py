@@ -82,7 +82,7 @@ def summarize_device_network_attribution(
 
 @router.get("/network-attribution/map", response_model=NetworkMapResponse)
 def network_attribution_map(
-    minutes: int = Query(default=15, ge=1, le=60),
+    minutes: int = Query(default=1, ge=1, le=60),
     _: None = Depends(verify_admin_api_token),
     service: NetworkAttributionService = Depends(get_network_attribution_service),
 ):
