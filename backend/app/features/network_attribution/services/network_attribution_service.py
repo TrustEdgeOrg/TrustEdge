@@ -28,6 +28,7 @@ from app.features.network_attribution.schemas.network_attribution import (
 from app.features.network_attribution.services.app_catalog import normalize_app
 from app.features.vpn.models.vpn_peer import VpnPeer
 from app.shared.config import settings
+from app.shared.domain_utils import extract_root_domain
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -259,7 +260,8 @@ class NetworkAttributionService:
             slug = (row.attributed_app_slug or "").strip()
             if not slug:
                 continue
-            key = (device_id, slug, row.domain)
+            root_domain = extract_root_domain(row.domain)
+            key = (device_id, slug, root_domain)
             blocked = bool(row.blocked)
             prev = dns_group.get(key)
             if prev is None:
@@ -292,7 +294,9 @@ class NetworkAttributionService:
                     blocked_count=blocked_count,
                 )
 
-        attributed_domains: set[tuple[int, str]] = set(dns_group.keys())
+        attributed_roots: set[tuple[int, str]] = {
+            (device_id, root_domain) for device_id, _slug, root_domain in dns_group.keys()
+        }
         all_dns_rows = (
             self.db.query(DnsQuery)
             .filter(DnsQuery.timestamp >= since)
@@ -308,8 +312,9 @@ class NetworkAttributionService:
             if match is None:
                 continue
             device_id, _, _ = match
-            key = (device_id, row.domain)
-            if key in attributed_domains:
+            root_domain = extract_root_domain(row.domain)
+            key = (device_id, root_domain)
+            if key in attributed_roots:
                 continue
             blocked = bool(row.blocked)
             prev = direct_group.get(key)
@@ -318,9 +323,9 @@ class NetworkAttributionService:
             else:
                 direct_group[key] = (prev[0] + 1, prev[1] + (1 if blocked else 0))
 
-        for (device_id, domain), (count, blocked_count) in direct_group.items():
+        for (device_id, root_domain), (count, blocked_count) in direct_group.items():
             device_node = ensure_device(device_id)
-            domain_node = ensure_domain(domain, blocked_count > 0)
+            domain_node = ensure_domain(root_domain, blocked_count > 0)
             key = (device_node, domain_node, "dns_direct")
             edge_map[key] = NetworkMapEdge(
                 source=device_node,

@@ -14,23 +14,41 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
-import { useDnsLiveFeed, LiveDnsQuery } from '../../dns-queries/hooks/useDnsLiveFeed';
+import { useDnsLiveFeed } from '../../dns-queries/hooks/useDnsLiveFeed';
+import { groupLiveDnsByRoot, GroupedLiveDnsEntry } from '../../dns-queries/utils/groupLiveDnsFeed';
 import { formatTime } from '../../../shared/utils/dateUtils';
 import { getAppIconStyle } from '../../network-map/utils/appIcons';
 
-function QueryRow({ query }: { query: LiveDnsQuery }) {
-  const appStyle = query.attributed_app_display_name
-    ? getAppIconStyle(query.attributed_app_slug)
+function domainTooltip(entry: GroupedLiveDnsEntry): string {
+  const lines = [`${entry.queryCount} queries`];
+  if (entry.blockedCount > 0) {
+    lines.push(`${entry.blockedCount} blocked`);
+  }
+  if (entry.sampleDomains.length > 0) {
+    lines.push('', 'Subdomains:', ...entry.sampleDomains);
+  }
+  return lines.join('\n');
+}
+
+function QueryRow({ entry }: { entry: GroupedLiveDnsEntry }) {
+  const appStyle = entry.attributed_app_display_name
+    ? getAppIconStyle(entry.attributed_app_slug)
     : null;
+  const blocked = entry.blockedCount > 0;
+  const statusLabel = blocked
+    ? entry.blockedCount === entry.queryCount
+      ? 'Blocked'
+      : `Blocked (${entry.blockedCount})`
+    : 'Allowed';
 
   return (
     <ListItem
       sx={{
         py: 0.5,
         px: 1.5,
-        backgroundColor: query.blocked ? 'rgba(211, 47, 47, 0.06)' : 'transparent',
+        backgroundColor: blocked ? 'rgba(211, 47, 47, 0.06)' : 'transparent',
         '&:hover': {
-          backgroundColor: query.blocked ? 'rgba(211, 47, 47, 0.1)' : 'action.hover',
+          backgroundColor: blocked ? 'rgba(211, 47, 47, 0.1)' : 'action.hover',
         },
         transition: 'background-color 0.2s',
       }}
@@ -47,21 +65,32 @@ function QueryRow({ query }: { query: LiveDnsQuery }) {
                 flexShrink: 0,
               }}
             >
-              {formatTime(query.timestamp)}
+              {formatTime(entry.latestTimestamp)}
             </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: 500,
-                flex: 1,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {query.domain}
-            </Typography>
-            {appStyle && query.attributed_app_display_name && (
+            <Tooltip title={domainTooltip(entry)}>
+              <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 500,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {entry.rootDomain}
+                </Typography>
+                {entry.queryCount > 1 && (
+                  <Chip
+                    label={`×${entry.queryCount}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.7rem', flexShrink: 0 }}
+                  />
+                )}
+              </Stack>
+            </Tooltip>
+            {appStyle && entry.attributed_app_display_name && (
               <Tooltip title="Attributed to foreground app at query time (endpoint telemetry)">
                 <Chip
                   size="small"
@@ -71,7 +100,7 @@ function QueryRow({ query }: { query: LiveDnsQuery }) {
                       {appStyle.icon}
                     </Box>
                   }
-                  label={query.attributed_app_display_name}
+                  label={entry.attributed_app_display_name}
                   sx={{ maxWidth: 140, flexShrink: 0 }}
                 />
               </Tooltip>
@@ -86,11 +115,11 @@ function QueryRow({ query }: { query: LiveDnsQuery }) {
                 textAlign: 'right',
               }}
             >
-              {query.client_ip}
+              {entry.clientIp}
             </Typography>
             <Chip
-              label={query.blocked ? 'Blocked' : 'Allowed'}
-              color={query.blocked ? 'error' : 'success'}
+              label={statusLabel}
+              color={blocked ? 'error' : 'success'}
               size="small"
               variant="outlined"
               sx={{ minWidth: 70, flexShrink: 0 }}
@@ -111,6 +140,8 @@ export default function DnsLiveFeed() {
     togglePause,
     clearFeed,
   } = useDnsLiveFeed();
+
+  const groupedFeed = useMemo(() => groupLiveDnsByRoot(feed), [feed]);
 
   const statusColor = useMemo(() => {
     switch (connectionStatus) {
@@ -140,6 +171,16 @@ export default function DnsLiveFeed() {
         return 'Unknown';
     }
   }, [connectionStatus]);
+
+  const entrySummary = useMemo(() => {
+    if (feed.length === 0) {
+      return '0 sites';
+    }
+    if (groupedFeed.length === feed.length) {
+      return `${groupedFeed.length} sites`;
+    }
+    return `${groupedFeed.length} sites · ${feed.length} queries`;
+  }, [feed.length, groupedFeed.length]);
 
   return (
     <Paper variant="outlined" sx={{ height: 400, display: 'flex', flexDirection: 'column' }}>
@@ -185,7 +226,7 @@ export default function DnsLiveFeed() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          {feed.length} entries
+          {entrySummary}
         </Typography>
 
         <Tooltip title={isPaused ? 'Resume' : 'Pause'}>
@@ -203,7 +244,7 @@ export default function DnsLiveFeed() {
 
       {/* Feed content */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {feed.length === 0 ? (
+        {groupedFeed.length === 0 ? (
           <Box
             sx={{
               display: 'flex',
@@ -221,10 +262,10 @@ export default function DnsLiveFeed() {
           </Box>
         ) : (
           <List dense disablePadding>
-            {feed.map((query, index) => (
-              <Box key={`${query.timestamp}-${query.domain}-${index}`}>
-                <QueryRow query={query} />
-                {index < feed.length - 1 && <Divider component="li" />}
+            {groupedFeed.map((entry, index) => (
+              <Box key={`${entry.latestTimestamp}-${entry.rootDomain}-${entry.clientIp}`}>
+                <QueryRow entry={entry} />
+                {index < groupedFeed.length - 1 && <Divider component="li" />}
               </Box>
             ))}
           </List>
