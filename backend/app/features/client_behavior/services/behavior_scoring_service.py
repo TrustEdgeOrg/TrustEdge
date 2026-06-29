@@ -25,6 +25,12 @@ from app.shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class BehaviorScoringService:
     """Score recent activity vs baseline; alert and optionally auto-block per device."""
 
@@ -184,7 +190,7 @@ class BehaviorScoringService:
 
         if profile.updated_at is None:
             return True
-        age = datetime.now(timezone.utc) - profile.updated_at
+        age = datetime.now(timezone.utc) - _as_utc(profile.updated_at)
         return age > timedelta(hours=settings.BEHAVIOR_BASELINE_RECOMPUTE_HOURS)
 
     def _compute_score(

@@ -1,6 +1,27 @@
 """Unit tests for behavior scoring auto-block domain selection."""
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from app.features.client_behavior.services.behavior_scoring_service import BehaviorScoringService
+
+
+def test_should_recompute_baseline_accepts_naive_updated_at():
+    service = BehaviorScoringService(db=None)  # type: ignore[arg-type]
+    profile = SimpleNamespace(
+        baseline_json=None,
+        updated_at=datetime(2026, 1, 1, 0, 0, 0),
+    )
+    assert service._should_recompute_baseline(profile) is True
+
+
+def test_should_recompute_baseline_accepts_aware_updated_at():
+    service = BehaviorScoringService(db=None)  # type: ignore[arg-type]
+    profile = SimpleNamespace(
+        baseline_json=None,
+        updated_at=datetime.now(timezone.utc),
+    )
+    assert service._should_recompute_baseline(profile) is False
 
 
 def test_domains_for_auto_block_prioritizes_suspicious():
