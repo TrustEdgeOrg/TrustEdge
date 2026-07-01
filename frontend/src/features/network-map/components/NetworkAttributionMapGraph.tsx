@@ -23,7 +23,14 @@ import {
   pathColumnLabels,
   shortenLabel,
 } from '../utils/layoutNetworkMap';
-import { flowNodeTooltip, formatFlowNodeLabel } from '../utils/flowLabels';
+import { flowNodeTooltip, parseFlowNode, parsePortNodeId, portNodeTooltip } from '../utils/flowLabels';
+import { expandFlowToPortView } from '../utils/expandFlowToPortView';
+import {
+  computePortWhatIfSimulation,
+  listActivePortNumbers,
+  PortWhatIfSimulationResult,
+  toggleDisabledPortNumber,
+} from '../utils/portWhatIfSimulation';
 import { getNodeIconStyle } from '../utils/appIcons';
 import { NetworkMapEdge, NetworkMapNode, PositionedNode } from '../types/networkMap';
 import {
@@ -53,11 +60,13 @@ interface MapNodeGlyphProps {
   whatIfMode: boolean;
   pathViewMode: boolean;
   flowViewMode: boolean;
+  portDisabled: boolean;
   appDisabled: boolean;
   simulatedBlocked: boolean;
   selected: boolean;
   onSelectApp?: (nodeId: string) => void;
   onSelectDomain?: (nodeId: string) => void;
+  onSelectPort?: (port: number) => void;
 }
 
 function MapNodeGlyph({
@@ -65,11 +74,13 @@ function MapNodeGlyph({
   whatIfMode,
   pathViewMode,
   flowViewMode,
+  portDisabled,
   appDisabled,
   simulatedBlocked,
   selected,
   onSelectApp,
   onSelectDomain,
+  onSelectPort,
 }: MapNodeGlyphProps) {
   const theme = useTheme();
   const style = getNodeIconStyle({
@@ -80,7 +91,7 @@ function MapNodeGlyph({
 
   const isInfra = node.type === 'tunnel' || node.type === 'gateway' || node.type === 'policy';
 
-  const ring = appDisabled
+  const ring = appDisabled || portDisabled
     ? theme.palette.error.main
     : selected
       ? theme.palette.info.main
@@ -98,7 +109,17 @@ function MapNodeGlyph({
       : node.type === 'domain'
         ? `${node.label}${node.blocked ? ' · blocked' : ''}${simulatedBlocked ? ' · would lose access (what-if)' : ''}`
         : node.type === 'flow'
-          ? flowNodeTooltip(node.label)
+          ? (() => {
+              const parsed = parseFlowNode(node);
+              return parsed
+                ? `Open ${parsed.protocol.toUpperCase()} connection to ${node.label} on port ${parsed.port}`
+                : flowNodeTooltip(node.label);
+            })()
+          : node.type === 'port'
+            ? (() => {
+                const parsed = parsePortNodeId(node.id);
+                return parsed ? portNodeTooltip(parsed.protocol, parsed.port) : `Port ${node.label}`;
+              })()
           : node.type === 'tunnel'
           ? `${node.label} · VPN tunnel to gateway`
           : node.type === 'gateway'
@@ -110,35 +131,43 @@ function MapNodeGlyph({
   if (whatIfMode && node.type === 'app') {
     tooltipParts.push(appDisabled ? 'Click to re-enable in what-if' : 'Click to disable in what-if');
   }
+  if (whatIfMode && node.type === 'port' && flowViewMode) {
+    tooltipParts.push(portDisabled ? 'Click to unblock in what-if' : 'Click to simulate blocking this port');
+  }
   if (pathViewMode && node.type === 'domain') {
     tooltipParts.push('Click to inspect DNS path');
   }
 
-  const selectableApp = whatIfMode && node.type === 'app';
+  const selectableApp = whatIfMode && node.type === 'app' && !flowViewMode;
+  const selectablePort = whatIfMode && flowViewMode && node.type === 'port';
   const selectableDomain = pathViewMode && node.type === 'domain';
   const pinLabel =
-    node.type === 'flow'
-      ? formatFlowNodeLabel(node.label, 14)
-      : flowViewMode && node.type === 'domain'
+    node.type === 'port'
+      ? node.label
+      : node.type === 'flow'
         ? shortenLabel(node.label, 14)
-        : isInfra
-          ? shortenLabel(node.label, 12)
-          : null;
+        : flowViewMode && node.type === 'domain'
+          ? shortenLabel(node.label, 14)
+          : isInfra
+            ? shortenLabel(node.label, 12)
+            : null;
   const showPinLabel = pinLabel != null;
 
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
       style={{
-        cursor: selectableApp || selectableDomain ? 'pointer' : 'default',
-        opacity: appDisabled ? 0.45 : 1,
+        cursor: selectableApp || selectableDomain || selectablePort ? 'pointer' : 'default',
+        opacity: appDisabled || portDisabled ? 0.45 : 1,
       }}
       onClick={
         selectableApp
           ? () => onSelectApp?.(node.id)
           : selectableDomain
             ? () => onSelectDomain?.(node.id)
-            : undefined
+            : selectablePort
+              ? () => onSelectPort?.(Number(node.label))
+              : undefined
       }
     >
       <title>{tooltipParts.join(' · ')}</title>
@@ -147,9 +176,9 @@ function MapNodeGlyph({
         fill={theme.palette.background.paper}
         stroke={ring}
         strokeWidth={
-          selected ? 2.25 : appDisabled ? 2 : node.type === 'device' && node.fresh ? 1.75 : 1.25
+          selected ? 2.25 : appDisabled || portDisabled ? 2 : node.type === 'device' && node.fresh ? 1.75 : 1.25
         }
-        strokeDasharray={appDisabled ? '3 2' : undefined}
+        strokeDasharray={appDisabled || portDisabled ? '3 2' : undefined}
       />
       <circle r={NODE_R} fill={style.bg} />
       {appDisabled && (
@@ -219,6 +248,12 @@ function edgeTooltip(
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
     return `${source} → ${target} · policy decision · ${edge.query_count} quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked} · click for path detail`;
   }
+  if (edge.kind === 'to_port') {
+    return `${source} → port ${target} · traffic grouped by port number`;
+  }
+  if (edge.kind === 'port_to_flow') {
+    return `Port ${source} → ${target} · open connection`;
+  }
   if (edge.kind === 'dns_to_flow') {
     return `${source} → ${target} · DNS name matched to open connection`;
   }
@@ -236,8 +271,13 @@ function edgeTooltip(
 function isEdgeSimulatedCut(
   edge: NetworkMapEdge,
   whatIf: WhatIfSimulationResult | null,
+  portWhatIf: PortWhatIfSimulationResult | null,
   pathViewMode: boolean,
+  flowViewMode: boolean,
 ): boolean {
+  if (portWhatIf && flowViewMode) {
+    return portWhatIf.disabledEdgeKeys.has(edgeKey(edge));
+  }
   if (!whatIf) {
     return false;
   }
@@ -273,6 +313,12 @@ function edgeStroke(
   if (edge.kind === 'path_forward') {
     return edge.blocked_count > 0 ? theme.palette.error.main : theme.palette.success.main;
   }
+  if (edge.kind === 'to_port') {
+    return theme.palette.secondary.main;
+  }
+  if (edge.kind === 'port_to_flow') {
+    return theme.palette.info.dark;
+  }
   if (edge.kind === 'dns_to_flow') {
     return theme.palette.info.dark;
   }
@@ -300,6 +346,7 @@ export default function NetworkAttributionMapGraph({
   const [whatIfMode, setWhatIfMode] = useState(false);
   const [pathViewMode, setPathViewMode] = useState(false);
   const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
+  const [disabledPortNumbers, setDisabledPortNumbers] = useState<Set<number>>(new Set());
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
 
   const layoutMode = pathViewMode ? 'path' : flowViewMode ? 'flow' : 'attribution';
@@ -308,11 +355,14 @@ export default function NetworkAttributionMapGraph({
     if (!data) {
       return null;
     }
-    if (!pathViewMode) {
-      return { nodes: data.nodes, edges: data.edges };
+    if (pathViewMode) {
+      return expandToPathView(data.nodes, data.edges);
     }
-    return expandToPathView(data.nodes, data.edges);
-  }, [data, pathViewMode]);
+    if (flowViewMode) {
+      return expandFlowToPortView(data.nodes, data.edges);
+    }
+    return { nodes: data.nodes, edges: data.edges };
+  }, [data, pathViewMode, flowViewMode]);
 
   const layout = useMemo(() => {
     if (!graphData) {
@@ -328,11 +378,23 @@ export default function NetworkAttributionMapGraph({
   }, [layout]);
 
   const whatIf = useMemo(() => {
-    if (!data || !whatIfMode) {
+    if (!data || !whatIfMode || flowViewMode) {
       return null;
     }
     return computeWhatIfSimulation(data.nodes, data.edges, disabledAppIds);
-  }, [data, whatIfMode, disabledAppIds]);
+  }, [data, whatIfMode, disabledAppIds, flowViewMode]);
+
+  const portWhatIf = useMemo(() => {
+    if (!graphData || !whatIfMode || !flowViewMode) {
+      return null;
+    }
+    return computePortWhatIfSimulation(graphData.nodes, graphData.edges, disabledPortNumbers);
+  }, [graphData, whatIfMode, flowViewMode, disabledPortNumbers]);
+
+  const activePortNumbers = useMemo(
+    () => (graphData ? listActivePortNumbers(graphData.nodes) : []),
+    [graphData],
+  );
 
   const selectedFlows = useMemo((): PathFlowDetail[] => {
     if (!data || !selectedDomainId) {
@@ -362,6 +424,7 @@ export default function NetworkAttributionMapGraph({
     setWhatIfMode(enabled);
     if (!enabled) {
       setDisabledAppIds(new Set());
+      setDisabledPortNumbers(new Set());
     }
   };
 
@@ -380,6 +443,13 @@ export default function NetworkAttributionMapGraph({
     if (enabled) {
       setPathViewMode(false);
     }
+    if (!enabled) {
+      setDisabledPortNumbers(new Set());
+    }
+  };
+
+  const handleTogglePort = (port: number) => {
+    setDisabledPortNumbers((prev) => toggleDisabledPortNumber(prev, port));
   };
 
   const handleEdgeClick = (edge: NetworkMapEdge) => {
@@ -414,7 +484,7 @@ export default function NetworkAttributionMapGraph({
     if (!flowViewMode) {
       return visible;
     }
-    const order: Record<string, number> = { flow: 0, domain: 1, app: 2, device: 3 };
+    const order: Record<string, number> = { flow: 0, port: 1, domain: 2, app: 3, device: 4 };
     return [...visible].sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9));
   }, [layout, flowViewMode]);
 
@@ -506,9 +576,8 @@ export default function NetworkAttributionMapGraph({
 
       {flowViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<SettingsEthernetIcon fontSize="small" />}>
-          <strong>Live connections</strong> are open TCP/UDP sockets right now (e.g.{' '}
-          <code>github.com:443</code>), not just DNS lookups. Solid cyan lines = matched to a DNS name;
-          dashed lines = IP-only. Names appear under each cyan pin.
+          <strong>Ports</strong> group live connections (e.g. <code>443</code> = HTTPS). The right column shows
+          where each connection goes (hostname or IP). Turn on <strong>What-if</strong> to simulate blocking a port.
         </Alert>
       )}
 
@@ -519,7 +588,32 @@ export default function NetworkAttributionMapGraph({
         </Alert>
       )}
 
-      {whatIfMode && (
+      {whatIfMode && flowViewMode && (
+        <Alert severity="info" sx={{ mb: 1.5 }} icon={<ScienceIcon fontSize="small" />}>
+          {disabledPortNumbers.size === 0 ? (
+            <>Click a port chip below or purple port pin on the map to simulate blocking that port.</>
+          ) : (
+            <>
+              Simulating blocked ports:{' '}
+              <strong>{[...disabledPortNumbers].sort((a, b) => a - b).join(', ')}</strong>
+              {' · '}
+              {portWhatIf?.affectedConnectionCount ?? 0} live connection
+              {(portWhatIf?.affectedConnectionCount ?? 0) === 1 ? '' : 's'} would drop
+            </>
+          )}
+          {disabledPortNumbers.size > 0 && (
+            <Button
+              size="small"
+              sx={{ ml: 1, mt: { xs: 1, sm: 0 } }}
+              onClick={() => setDisabledPortNumbers(new Set())}
+            >
+              Clear
+            </Button>
+          )}
+        </Alert>
+      )}
+
+      {whatIfMode && !flowViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<ScienceIcon fontSize="small" />}>
           {disabledAppIds.size === 0 ? (
             <>Select a process below or on the map to simulate it being disabled.</>
@@ -546,7 +640,7 @@ export default function NetworkAttributionMapGraph({
         </Alert>
       )}
 
-      {whatIfMode && appNodes.length > 0 && (
+      {whatIfMode && !flowViewMode && appNodes.length > 0 && (
         <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
           {appNodes.map((app) => {
             const selected = disabledAppIds.has(app.id);
@@ -568,6 +662,26 @@ export default function NetworkAttributionMapGraph({
                 }
                 label={`${selected ? 'Disable ' : ''}${app.label}`}
                 onClick={() => handleToggleApp(app.id)}
+                sx={{ cursor: 'pointer' }}
+              />
+            );
+          })}
+        </Stack>
+      )}
+
+      {whatIfMode && flowViewMode && activePortNumbers.length > 0 && (
+        <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
+          {activePortNumbers.map((port) => {
+            const selected = disabledPortNumbers.has(port);
+            return (
+              <Chip
+                key={port}
+                size="small"
+                variant={selected ? 'filled' : 'outlined'}
+                color={selected ? 'error' : 'default'}
+                icon={selected ? <BlockIcon sx={{ fontSize: 14 }} /> : undefined}
+                label={`${selected ? 'Block ' : ''}port ${port}`}
+                onClick={() => handleTogglePort(port)}
                 sx={{ cursor: 'pointer' }}
               />
             );
@@ -646,14 +760,14 @@ export default function NetworkAttributionMapGraph({
               if (!from || !to) {
                 return null;
               }
-              const simulatedCut = isEdgeSimulatedCut(edge, whatIf, pathViewMode);
+              const simulatedCut = isEdgeSimulatedCut(edge, whatIf, portWhatIf, pathViewMode, flowViewMode);
               const animated =
                 !simulatedCut &&
                 (edge.kind === 'dns' ||
                   edge.kind === 'dns_direct' ||
                   edge.kind === 'path_forward' ||
                   edge.kind === 'path_egress' ||
-                  edge.kind === 'dns_to_flow');
+                  edge.kind === 'port_to_flow');
               const stroke = edgeStroke(edge, theme, simulatedCut);
               const clickable =
                 pathViewMode && (edge.kind === 'path_forward' || edge.kind === 'dns' || edge.kind === 'dns_direct');
@@ -704,11 +818,18 @@ export default function NetworkAttributionMapGraph({
                 whatIfMode={whatIfMode}
                 pathViewMode={pathViewMode}
                 flowViewMode={flowViewMode}
-                appDisabled={whatIfMode && disabledAppIds.has(node.id)}
-                simulatedBlocked={whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false}
+                appDisabled={whatIfMode && !flowViewMode && disabledAppIds.has(node.id)}
+                portDisabled={
+                  whatIfMode && flowViewMode && node.type === 'port' && disabledPortNumbers.has(Number(node.label))
+                }
+                simulatedBlocked={
+                  (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false) ||
+                  (portWhatIf?.simulatedBlockedFlowIds.has(node.id) ?? false)
+                }
                 selected={selectedDomainId === node.id}
                 onSelectApp={handleToggleApp}
                 onSelectDomain={handleDomainSelect}
+                onSelectPort={handleTogglePort}
               />
             ))}
           </Box>
@@ -735,9 +856,9 @@ export default function NetworkAttributionMapGraph({
             <Chip size="small" variant="outlined" label="Center = process" />
             {flowViewMode ? (
               <>
-                <Chip size="small" variant="outlined" label="Cyan pin = open connection" sx={{ borderColor: 'info.dark', color: 'info.dark' }} />
-                <Chip size="small" variant="outlined" label="Solid line = DNS matched" />
-                <Chip size="small" variant="outlined" label="Dashed line = IP only" />
+                <Chip size="small" variant="outlined" label="Purple pin = port" sx={{ borderColor: 'secondary.main', color: 'secondary.main' }} />
+                <Chip size="small" variant="outlined" label="Cyan pin = destination" sx={{ borderColor: 'info.dark', color: 'info.dark' }} />
+                <Chip size="small" variant="outlined" label="What-if: block port chips" />
               </>
             ) : pathViewMode ? (
               <>
@@ -754,7 +875,7 @@ export default function NetworkAttributionMapGraph({
               label="Animated arc = live DNS"
               sx={{ borderColor: 'success.main', color: 'success.main' }}
             />
-            {!pathViewMode && (
+            {!pathViewMode && !flowViewMode && (
               <Chip
                 size="small"
                 variant="outlined"
@@ -786,8 +907,13 @@ export default function NetworkAttributionMapGraph({
                   app_slug: node.app_slug,
                   blocked: node.blocked || (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false),
                 });
-                const appDisabled = whatIfMode && disabledAppIds.has(node.id);
+                const appDisabled = whatIfMode && !flowViewMode && disabledAppIds.has(node.id);
+                const portDisabled =
+                  whatIfMode && flowViewMode && node.type === 'port' && disabledPortNumbers.has(Number(node.label));
                 const domainSelected = pathViewMode && selectedDomainId === node.id;
+                const simulatedBlocked =
+                  (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false) ||
+                  (portWhatIf?.simulatedBlockedFlowIds.has(node.id) ?? false);
                 return (
                   <Stack
                     key={node.id}
@@ -795,11 +921,13 @@ export default function NetworkAttributionMapGraph({
                     spacing={0.75}
                     alignItems="center"
                     onClick={
-                      whatIfMode && node.type === 'app'
+                      whatIfMode && !flowViewMode && node.type === 'app'
                         ? () => handleToggleApp(node.id)
-                        : pathViewMode && node.type === 'domain'
-                          ? () => handleDomainSelect(node.id)
-                          : undefined
+                        : whatIfMode && flowViewMode && node.type === 'port'
+                          ? () => handleTogglePort(Number(node.label))
+                          : pathViewMode && node.type === 'domain'
+                            ? () => handleDomainSelect(node.id)
+                            : undefined
                     }
                     sx={{
                       px: 1,
@@ -807,16 +935,20 @@ export default function NetworkAttributionMapGraph({
                       borderRadius: 1,
                       bgcolor: alpha(theme.palette.background.paper, 0.6),
                       border: `1px solid ${
-                        appDisabled
+                        appDisabled || portDisabled
                           ? theme.palette.error.main
                           : domainSelected
                             ? theme.palette.info.main
-                            : theme.palette.divider
+                            : simulatedBlocked
+                              ? theme.palette.error.light
+                              : theme.palette.divider
                       }`,
                       minWidth: 0,
-                      opacity: appDisabled ? 0.55 : 1,
+                      opacity: appDisabled || portDisabled ? 0.55 : 1,
                       cursor:
-                        (whatIfMode && node.type === 'app') || (pathViewMode && node.type === 'domain')
+                        (whatIfMode && !flowViewMode && node.type === 'app') ||
+                        (whatIfMode && flowViewMode && node.type === 'port') ||
+                        (pathViewMode && node.type === 'domain')
                           ? 'pointer'
                           : 'default',
                     }}
@@ -838,7 +970,11 @@ export default function NetworkAttributionMapGraph({
                       {style.icon}
                     </Box>
                     <Typography variant="caption" noWrap title={node.label} sx={{ minWidth: 0 }}>
-                      {node.type === 'flow' ? formatFlowNodeLabel(node.label) : shortenLabel(node.label)}
+                      {node.type === 'port'
+                        ? `port ${node.label}`
+                        : node.type === 'flow'
+                          ? shortenLabel(node.label)
+                          : shortenLabel(node.label)}
                     </Typography>
                   </Stack>
                 );

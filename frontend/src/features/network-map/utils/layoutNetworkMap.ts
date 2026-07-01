@@ -19,15 +19,16 @@ const COL_PATH = {
 } as const;
 
 const COL_FLOW = {
-  device: 100,
-  app: 250,
-  domain: 430,
-  flow: 610,
+  device: 70,
+  app: 180,
+  domain: 290,
+  port: 400,
+  flow: 510,
 } as const;
 
 export const PATH_LAYOUT_WIDTH = 640;
 export const ATTRIBUTION_LAYOUT_WIDTH = 720;
-export const FLOW_LAYOUT_WIDTH = 720;
+export const FLOW_LAYOUT_WIDTH = 580;
 
 export interface NetworkMapLayout {
   nodes: PositionedNode[];
@@ -69,7 +70,19 @@ function parentKeyForFlow(flowId: string, edges: NetworkMapEdge[]): string {
     if (edge.target !== flowId) {
       continue;
     }
+    if (edge.kind === 'port_to_flow') {
+      return edge.source;
+    }
     if (edge.kind === 'dns_to_flow' || edge.kind === 'flow_session') {
+      return edge.source;
+    }
+  }
+  return '__orphan__';
+}
+
+function parentKeyForPort(portId: string, edges: NetworkMapEdge[]): string {
+  for (const edge of edges) {
+    if (edge.target === portId && edge.kind === 'to_port') {
       return edge.source;
     }
   }
@@ -114,6 +127,7 @@ export function layoutNetworkMap(
   const apps = nodes.filter((n) => n.type === 'app').sort((a, b) => a.label.localeCompare(b.label));
   const domains = nodes.filter((n) => n.type === 'domain').sort((a, b) => a.label.localeCompare(b.label));
   const flows = nodes.filter((n) => n.type === 'flow').sort((a, b) => a.label.localeCompare(b.label));
+  const ports = nodes.filter((n) => n.type === 'port').sort((a, b) => Number(a.label) - Number(b.label));
   const infra = nodes.filter((n) => n.type === 'tunnel' || n.type === 'gateway' || n.type === 'policy');
 
   const domainGroups = new Map<string, NetworkMapNode[]>();
@@ -174,6 +188,36 @@ export function layoutNetworkMap(
   }
 
   if (mode === 'flow') {
+    const portGroups = new Map<string, NetworkMapNode[]>();
+    for (const port of ports) {
+      const parent = parentKeyForPort(port.id, edges);
+      const list = portGroups.get(parent) ?? [];
+      list.push(port);
+      portGroups.set(parent, list);
+    }
+    const assignedPortYs: number[] = [];
+    for (const [parentId, group] of portGroups.entries()) {
+      const parent = positioned.get(parentId);
+      const centerY = parent?.y ?? 220;
+      const ys = spreadYs(group.length, centerY, MIN_GAP);
+      group.forEach((port, index) => {
+        positioned.set(port.id, {
+          ...port,
+          x: columns.port,
+          y: nextFreeY(ys[index] ?? centerY, assignedPortYs, MIN_GAP),
+        });
+      });
+    }
+    for (const port of ports) {
+      if (!positioned.has(port.id)) {
+        positioned.set(port.id, {
+          ...port,
+          x: columns.port,
+          y: nextFreeY(220, assignedPortYs, MIN_GAP),
+        });
+      }
+    }
+
     const flowGroups = new Map<string, NetworkMapNode[]>();
     for (const flow of flows) {
       const parent = parentKeyForFlow(flow.id, edges);
@@ -256,7 +300,8 @@ export function pathColumnLabels(mode: NetworkMapLayoutMode): { key: string; lab
       { key: 'device', label: 'Devices' },
       { key: 'app', label: 'Processes' },
       { key: 'domain', label: 'DNS names' },
-      { key: 'flow', label: 'Live connections' },
+      { key: 'port', label: 'Ports' },
+      { key: 'flow', label: 'Destinations' },
     ];
   }
   if (mode === 'path') {
