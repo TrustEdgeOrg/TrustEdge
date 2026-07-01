@@ -34,6 +34,7 @@ describe('flowNodeTooltip', () => {
 
 describe('portNodeTooltip', () => {
   it('names well-known ports', () => {
-    expect(portNodeTooltip('tcp', 443)).toBe('TCP port 443 (HTTPS)');
+    expect(portNodeTooltip(443)).toContain('443');
+    expect(portNodeTooltip(443)).toContain('HTTPS');
   });
 });

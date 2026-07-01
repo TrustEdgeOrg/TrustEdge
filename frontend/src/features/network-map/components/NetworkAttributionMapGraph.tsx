@@ -23,7 +23,7 @@ import {
   pathColumnLabels,
   shortenLabel,
 } from '../utils/layoutNetworkMap';
-import { flowNodeTooltip, parseFlowNode, parsePortNodeId, portNodeTooltip } from '../utils/flowLabels';
+import { flowNodeTooltip, parseFlowNode, portNodeTooltip } from '../utils/flowLabels';
 import { expandFlowToPortView } from '../utils/expandFlowToPortView';
 import {
   computePortWhatIfSimulation,
@@ -116,15 +116,12 @@ function MapNodeGlyph({
                 : flowNodeTooltip(node.label);
             })()
           : node.type === 'port'
-            ? (() => {
-                const parsed = parsePortNodeId(node.id);
-                return parsed ? portNodeTooltip(parsed.protocol, parsed.port) : `Port ${node.label}`;
-              })()
-          : node.type === 'tunnel'
-          ? `${node.label} · VPN tunnel to gateway`
+            ? portNodeTooltip(Number(node.label))
           : node.type === 'gateway'
-            ? `${node.label} · dnsmasq on EC2`
-            : node.type === 'policy'
+            ? `${node.label} · dnsmasq resolver on EC2`
+          : node.type === 'tunnel'
+            ? `${node.label} · VPN tunnel to gateway`
+          : node.type === 'policy'
               ? `${node.label} · allow / block decision`
               : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`,
   ];
@@ -146,7 +143,7 @@ function MapNodeGlyph({
       ? node.label
       : node.type === 'flow'
         ? shortenLabel(node.label, 14)
-        : flowViewMode && node.type === 'domain'
+        : flowViewMode && node.type === 'gateway'
           ? shortenLabel(node.label, 14)
           : isInfra
             ? shortenLabel(node.label, 12)
@@ -248,8 +245,12 @@ function edgeTooltip(
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
     return `${source} → ${target} · policy decision · ${edge.query_count} quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked} · click for path detail`;
   }
+  if (edge.kind === 'flow_via_gateway') {
+    return `${source} → ${target} · DNS resolved on EC2 gateway`;
+  }
   if (edge.kind === 'to_port') {
-    return `${source} → port ${target} · traffic grouped by port number`;
+    const portLabel = nodes.get(edge.target)?.label ?? edge.target;
+    return `${source} → port ${portLabel} · gateway egress on this port`;
   }
   if (edge.kind === 'port_to_flow') {
     return `Port ${source} → ${target} · open connection`;
@@ -312,6 +313,9 @@ function edgeStroke(
   }
   if (edge.kind === 'path_forward') {
     return edge.blocked_count > 0 ? theme.palette.error.main : theme.palette.success.main;
+  }
+  if (edge.kind === 'flow_via_gateway') {
+    return theme.palette.info.main;
   }
   if (edge.kind === 'to_port') {
     return theme.palette.secondary.main;
@@ -484,7 +488,7 @@ export default function NetworkAttributionMapGraph({
     if (!flowViewMode) {
       return visible;
     }
-    const order: Record<string, number> = { flow: 0, port: 1, domain: 2, app: 3, device: 4 };
+    const order: Record<string, number> = { flow: 0, port: 1, gateway: 2, app: 3, device: 4 };
     return [...visible].sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9));
   }, [layout, flowViewMode]);
 
@@ -576,8 +580,8 @@ export default function NetworkAttributionMapGraph({
 
       {flowViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<SettingsEthernetIcon fontSize="small" />}>
-          <strong>Ports</strong> group live connections network-wide (one shared <code>443</code> hub for all HTTPS).
-          Turn on <strong>What-if</strong> to simulate blocking a port for the whole VPN.
+          <strong>EC2 DNS</strong> is your gateway resolver (dnsmasq). All resolved traffic flows{' '}
+          EC2 → port hub → destination. Turn on <strong>What-if</strong> to simulate blocking a port at the gateway.
         </Alert>
       )}
 
@@ -597,8 +601,9 @@ export default function NetworkAttributionMapGraph({
               Simulating blocked ports:{' '}
               <strong>{[...disabledPortNumbers].sort((a, b) => a - b).join(', ')}</strong>
               {' · '}
-              {portWhatIf?.affectedConnectionCount ?? 0} live connection
-              {(portWhatIf?.affectedConnectionCount ?? 0) === 1 ? '' : 's'} would drop
+              EC2 would drop {portWhatIf?.affectedConnectionCount ?? 0} live connection
+              {(portWhatIf?.affectedConnectionCount ?? 0) === 1 ? '' : 's'} on{' '}
+              {disabledPortNumbers.size === 1 ? 'this port' : 'these ports'}
             </>
           )}
           {disabledPortNumbers.size > 0 && (
@@ -856,9 +861,9 @@ export default function NetworkAttributionMapGraph({
             <Chip size="small" variant="outlined" label="Center = process" />
             {flowViewMode ? (
               <>
-                <Chip size="small" variant="outlined" label="Purple pin = port" sx={{ borderColor: 'secondary.main', color: 'secondary.main' }} />
+                <Chip size="small" variant="outlined" label="Blue = EC2 DNS gateway" sx={{ borderColor: 'info.main', color: 'info.main' }} />
+                <Chip size="small" variant="outlined" label="Purple pin = port hub" sx={{ borderColor: 'secondary.main', color: 'secondary.main' }} />
                 <Chip size="small" variant="outlined" label="Cyan pin = destination" sx={{ borderColor: 'info.dark', color: 'info.dark' }} />
-                <Chip size="small" variant="outlined" label="What-if: block port chips" />
               </>
             ) : pathViewMode ? (
               <>

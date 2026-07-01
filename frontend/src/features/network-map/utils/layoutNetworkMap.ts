@@ -156,6 +156,9 @@ export function layoutNetworkMap(
   const assignedDomainYs: number[] = [];
 
   for (const [parentId, group] of domainGroups.entries()) {
+    if (mode === 'flow') {
+      continue;
+    }
     const parent = positioned.get(parentId);
     const centerY = parent?.y ?? 220;
     const ys = spreadYs(group.length, centerY, MIN_GAP);
@@ -169,6 +172,9 @@ export function layoutNetworkMap(
   }
 
   for (const domain of domains) {
+    if (mode === 'flow') {
+      continue;
+    }
     if (!positioned.has(domain.id)) {
       positioned.set(domain.id, {
         ...domain,
@@ -179,6 +185,15 @@ export function layoutNetworkMap(
   }
 
   if (mode === 'flow') {
+    const gateways = nodes.filter((n) => n.type === 'gateway');
+    for (const gateway of gateways) {
+      positioned.set(gateway.id, {
+        ...gateway,
+        x: columns.domain,
+        y: 220,
+      });
+    }
+
     const assignedPortYs: number[] = [];
     const portYs = spreadYs(ports.length, 220, MIN_GAP);
     ports.forEach((port, index) => {
@@ -270,7 +285,7 @@ export function pathColumnLabels(mode: NetworkMapLayoutMode): { key: string; lab
     return [
       { key: 'device', label: 'Devices' },
       { key: 'app', label: 'Processes' },
-      { key: 'domain', label: 'DNS names' },
+      { key: 'domain', label: 'EC2 DNS' },
       { key: 'port', label: 'Ports' },
       { key: 'flow', label: 'Destinations' },
     ];

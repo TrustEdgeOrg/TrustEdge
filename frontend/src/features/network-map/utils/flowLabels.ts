@@ -55,13 +55,12 @@ const WELL_KNOWN_PORTS: Record<number, string> = {
   3389: 'RDP',
 };
 
-export function portNodeTooltip(protocol: string, port: number): string {
+export function portNodeTooltip(port: number): string {
   const name = WELL_KNOWN_PORTS[port];
-  const upper = protocol.toUpperCase();
   if (name) {
-    return `${upper} port ${port} (${name})`;
+    return `Port ${port} (${name}) — all traffic on this port`;
   }
-  return `${upper} port ${port}`;
+  return `Port ${port} — network-wide (TCP + UDP)`;
 }
 
 export function formatFlowNodeLabel(raw: string, max = 20): string {
@@ -95,8 +94,9 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-export function globalPortNodeId(protocol: string, port: number): string {
-  return `port:${protocol.toLowerCase()}:${port}`;
+/** One hub per port number for the whole VPN (TCP + UDP merged). */
+export function globalPortNodeId(_protocol: string, port: number): string {
+  return `port:${port}`;
 }
 
 /** @deprecated Use globalPortNodeId — ports are network-wide, not per parent. */
@@ -104,14 +104,14 @@ export function portNodeId(_parentId: string, protocol: string, port: number): s
   return globalPortNodeId(protocol, port);
 }
 
-export function parsePortNodeId(portId: string): { protocol: string; port: number } | null {
-  const match = portId.match(/^port:([a-z]+):(\d+)$/i);
+export function parsePortNodeId(portId: string): { port: number } | null {
+  const match = portId.match(/^port:(\d+)$/);
   if (!match) {
     return null;
   }
-  const portNum = Number(match[2]);
+  const portNum = Number(match[1]);
   if (!Number.isFinite(portNum)) {
     return null;
   }
-  return { protocol: match[1].toLowerCase(), port: portNum };
+  return { port: portNum };
 }

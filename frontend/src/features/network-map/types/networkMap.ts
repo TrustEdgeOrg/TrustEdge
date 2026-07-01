@@ -11,7 +11,8 @@ export type NetworkMapEdgeKind =
   | 'flow_session'
   | 'dns_to_flow'
   | 'to_port'
-  | 'port_to_flow';
+  | 'port_to_flow'
+  | 'flow_via_gateway';
 
 export type NetworkMapLayoutMode = 'attribution' | 'path' | 'flow';
 
