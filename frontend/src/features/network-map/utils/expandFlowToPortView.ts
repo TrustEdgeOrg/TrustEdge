@@ -1,5 +1,12 @@
 import { NetworkMapEdge, NetworkMapNode } from '../types/networkMap';
+import { INFRA_GATEWAY_ID } from './expandPathView';
 import { parseFlowNode, globalPortNodeId } from './flowLabels';
+
+export const FLOW_GATEWAY_NODE: NetworkMapNode = {
+  id: INFRA_GATEWAY_ID,
+  type: 'gateway',
+  label: 'EC2 DNS',
+};
 
 function addEdge(
   edges: NetworkMapEdge[],
@@ -25,9 +32,25 @@ function addEdge(
   edges.push(edge);
 }
 
+function linkUpstreamToGateway(
+  edges: NetworkMapEdge[],
+  edgeMap: Map<string, NetworkMapEdge>,
+  allEdges: NetworkMapEdge[],
+  domainId: string,
+) {
+  for (const upstream of allEdges) {
+    if (upstream.target !== domainId) {
+      continue;
+    }
+    if (upstream.kind === 'dns' || upstream.kind === 'dns_direct') {
+      addEdge(edges, edgeMap, upstream.source, INFRA_GATEWAY_ID, 'flow_via_gateway');
+    }
+  }
+}
+
 /**
- * Flow view: one Port node per protocol+number for the whole network (e.g. single TCP/443 hub).
- * domain/app → shared port → destination (IP or hostname).
+ * Flow view: device → app → EC2 DNS gateway → port hub → destination.
+ * Per-domain nodes are collapsed into the single EC2 resolver (dnsmasq on gateway).
  */
 export function expandFlowToPortView(
   nodes: NetworkMapNode[],
@@ -35,18 +58,25 @@ export function expandFlowToPortView(
 ): { nodes: NetworkMapNode[]; edges: NetworkMapEdge[] } {
   const nodeMap = new Map<string, NetworkMapNode>();
   for (const node of nodes) {
-    if (node.type !== 'flow') {
+    if (node.type !== 'flow' && node.type !== 'domain') {
       nodeMap.set(node.id, node);
     }
   }
+  nodeMap.set(FLOW_GATEWAY_NODE.id, FLOW_GATEWAY_NODE);
 
   const outEdges: NetworkMapEdge[] = [];
   const edgeMap = new Map<string, NetworkMapEdge>();
 
   for (const edge of edges) {
-    if (edge.kind !== 'dns_to_flow' && edge.kind !== 'flow_session') {
-      addEdge(outEdges, edgeMap, edge.source, edge.target, edge.kind);
+    if (
+      edge.kind === 'dns_to_flow' ||
+      edge.kind === 'flow_session' ||
+      edge.kind === 'dns' ||
+      edge.kind === 'dns_direct'
+    ) {
+      continue;
     }
+    addEdge(outEdges, edgeMap, edge.source, edge.target, edge.kind);
   }
 
   for (const edge of edges) {
@@ -76,7 +106,12 @@ export function expandFlowToPortView(
       label: parsed.destination,
     });
 
-    addEdge(outEdges, edgeMap, edge.source, pid, 'to_port');
+    if (edge.kind === 'dns_to_flow') {
+      linkUpstreamToGateway(outEdges, edgeMap, edges, edge.source);
+      addEdge(outEdges, edgeMap, INFRA_GATEWAY_ID, pid, 'to_port');
+    } else {
+      addEdge(outEdges, edgeMap, edge.source, pid, 'to_port');
+    }
     addEdge(outEdges, edgeMap, pid, flowNode.id, 'port_to_flow');
   }
 

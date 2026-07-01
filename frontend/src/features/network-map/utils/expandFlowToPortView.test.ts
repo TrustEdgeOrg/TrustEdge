@@ -1,13 +1,22 @@
-import { expandFlowToPortView } from './expandFlowToPortView';
+import { expandFlowToPortView, FLOW_GATEWAY_NODE } from './expandFlowToPortView';
+import { INFRA_GATEWAY_ID } from './expandPathView';
 import { NetworkMapEdge, NetworkMapNode } from '../types/networkMap';
 
 describe('expandFlowToPortView', () => {
-  it('inserts port column between domain and destination', () => {
+  it('routes DNS-resolved flows through EC2 gateway instead of per-domain nodes', () => {
     const nodes: NetworkMapNode[] = [
+      { id: 'app:chrome', type: 'app', label: 'Chrome' },
       { id: 'domain:github.com', type: 'domain', label: 'github.com' },
       { id: 'flow:tcp:140.82.112.26:443', type: 'flow', label: 'TCP/443 github.com' },
     ];
     const edges: NetworkMapEdge[] = [
+      {
+        source: 'app:chrome',
+        target: 'domain:github.com',
+        kind: 'dns',
+        query_count: 1,
+        blocked_count: 0,
+      },
       {
         source: 'domain:github.com',
         target: 'flow:tcp:140.82.112.26:443',
@@ -18,17 +27,16 @@ describe('expandFlowToPortView', () => {
     ];
 
     const expanded = expandFlowToPortView(nodes, edges);
-    const port = expanded.nodes.find((n) => n.type === 'port');
-    const dest = expanded.nodes.find((n) => n.type === 'flow');
 
-    expect(port?.id).toBe('port:443');
-    expect(port?.label).toBe('443');
-    expect(dest?.label).toBe('github.com');
-    expect(expanded.edges.some((e) => e.kind === 'to_port' && e.target === port?.id)).toBe(true);
-    expect(expanded.edges.some((e) => e.kind === 'port_to_flow' && e.source === port?.id)).toBe(true);
+    expect(expanded.nodes.find((n) => n.type === 'domain')).toBeUndefined();
+    expect(expanded.nodes.find((n) => n.id === INFRA_GATEWAY_ID)).toEqual(FLOW_GATEWAY_NODE);
+    expect(expanded.edges.some((e) => e.kind === 'flow_via_gateway' && e.target === INFRA_GATEWAY_ID)).toBe(
+      true,
+    );
+    expect(expanded.edges.some((e) => e.kind === 'to_port' && e.source === INFRA_GATEWAY_ID)).toBe(true);
   });
 
-  it('merges multiple upstream paths into one network-wide port node', () => {
+  it('merges multiple domains into one port hub via EC2', () => {
     const nodes: NetworkMapNode[] = [
       { id: 'domain:github.com', type: 'domain', label: 'github.com' },
       { id: 'domain:google.com', type: 'domain', label: 'google.com' },
@@ -57,7 +65,9 @@ describe('expandFlowToPortView', () => {
 
     expect(ports).toHaveLength(1);
     expect(ports[0].id).toBe('port:443');
-    expect(expanded.edges.filter((e) => e.kind === 'to_port' && e.target === 'port:443')).toHaveLength(2);
+    expect(
+      expanded.edges.filter((e) => e.kind === 'to_port' && e.source === INFRA_GATEWAY_ID && e.target === 'port:443'),
+    ).toHaveLength(1);
   });
 
   it('merges TCP and UDP on the same port into one hub', () => {
