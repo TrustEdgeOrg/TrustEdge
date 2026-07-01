@@ -1,35 +1,91 @@
-/** Human-readable labels for conntrack flow nodes on the network map. */
+export interface ParsedFlowLabel {
+  protocol: string;
+  port: number;
+  destination: string;
+  destinationKind: 'domain' | 'ip';
+}
+
+export function parseFlowNode(
+  node: { id: string; type: string; label: string },
+): ParsedFlowLabel | null {
+  if (node.type !== 'flow') {
+    return null;
+  }
+
+  const labelMatch =
+    node.label.match(/^(TCP|UDP|ICMP)\/(\d+)\s+(\S+)$/i) ??
+    node.label.match(/^(TCP|UDP|ICMP)\/(\d+)\s*→\s*(.+)$/i);
+  if (labelMatch) {
+    const [, protocol, portText, destination] = labelMatch;
+    const port = Number(portText);
+    if (!Number.isFinite(port)) {
+      return null;
+    }
+    return {
+      protocol: protocol.toLowerCase(),
+      port,
+      destination,
+      destinationKind: /^\d+\.\d+\.\d+\.\d+$/.test(destination) ? 'ip' : 'domain',
+    };
+  }
+
+  const idMatch = node.id.match(/^flow:([a-z]+):([^:]+):(\d+)$/i);
+  if (!idMatch) {
+    return null;
+  }
+  const [, protocol, destination, portText] = idMatch;
+  const port = Number(portText);
+  if (!Number.isFinite(port)) {
+    return null;
+  }
+  return {
+    protocol: protocol.toLowerCase(),
+    port,
+    destination,
+    destinationKind: /^\d+\.\d+\.\d+\.\d+$/.test(destination) ? 'ip' : 'domain',
+  };
+}
+
+const WELL_KNOWN_PORTS: Record<number, string> = {
+  443: 'HTTPS',
+  80: 'HTTP',
+  53: 'DNS',
+  5222: 'XMPP/chat',
+  22: 'SSH',
+  3389: 'RDP',
+};
+
+export function portNodeTooltip(protocol: string, port: number): string {
+  const name = WELL_KNOWN_PORTS[port];
+  const upper = protocol.toUpperCase();
+  if (name) {
+    return `${upper} port ${port} (${name})`;
+  }
+  return `${upper} port ${port}`;
+}
 
 export function formatFlowNodeLabel(raw: string, max = 20): string {
-  const domainMatch = raw.match(/^(TCP|UDP|ICMP)\/(\d+)\s+(\S+)$/i);
-  if (domainMatch) {
-    const [, , port, host] = domainMatch;
-    return truncate(`${host}:${port}`, max);
+  const parsed = parseFlowNode({ id: '', type: 'flow', label: raw });
+  if (parsed) {
+    return truncate(parsed.destination, max);
   }
-
-  const ipMatch = raw.match(/^(TCP|UDP|ICMP)\/(\d+)\s*→\s*(.+)$/i);
-  if (ipMatch) {
-    const [, , port, ip] = ipMatch;
-    return truncate(`${ip}:${port}`, max);
-  }
-
   return truncate(raw, max);
 }
 
 export function flowNodeTooltip(raw: string): string {
-  const domainMatch = raw.match(/^(TCP|UDP|ICMP)\/(\d+)\s+(\S+)$/i);
-  if (domainMatch) {
-    const [, proto, port, host] = domainMatch;
-    return `Open ${proto.toUpperCase()} connection to ${host} on port ${port}`;
+  const parsed = parseFlowNode({ id: '', type: 'flow', label: raw });
+  if (parsed) {
+    return `Open ${parsed.protocol.toUpperCase()} connection to ${parsed.destination} on port ${parsed.port}`;
   }
-
-  const ipMatch = raw.match(/^(TCP|UDP|ICMP)\/(\d+)\s*→\s*(.+)$/i);
-  if (ipMatch) {
-    const [, proto, port, ip] = ipMatch;
-    return `Open ${proto.toUpperCase()} connection to ${ip} on port ${port}`;
-  }
-
   return `Live connection · ${raw}`;
+}
+
+export function flowDestinationTooltip(
+  destination: string,
+  protocol: string,
+  port: number,
+): string {
+  return `Open ${protocol.toUpperCase()} connection to ${destination} on port ${port}`;
 }
 
 function truncate(text: string, max: number): string {
@@ -37,4 +93,20 @@ function truncate(text: string, max: number): string {
     return text;
   }
   return `${text.slice(0, max - 1)}…`;
+}
+
+export function portNodeId(parentId: string, protocol: string, port: number): string {
+  return `port:${parentId}:${protocol}:${port}`;
+}
+
+export function parsePortNodeId(portId: string): { protocol: string; port: number } | null {
+  const match = portId.match(/^port:[^:]+:([a-z]+):(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+  const port = Number(match[2]);
+  if (!Number.isFinite(port)) {
+    return null;
+  }
+  return { protocol: match[1].toLowerCase(), port };
 }
