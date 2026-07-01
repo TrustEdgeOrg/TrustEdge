@@ -23,7 +23,7 @@ import {
   pathColumnLabels,
   shortenLabel,
 } from '../utils/layoutNetworkMap';
-import { flowNodeTooltip, parseFlowNode, parsePortNodeId, portNodeTooltip } from '../utils/flowLabels';
+import { flowNodeTooltip, parseFlowNode, portNodeTooltip } from '../utils/flowLabels';
 import { expandFlowToPortView } from '../utils/expandFlowToPortView';
 import {
   computePortWhatIfSimulation,
@@ -116,10 +116,7 @@ function MapNodeGlyph({
                 : flowNodeTooltip(node.label);
             })()
           : node.type === 'port'
-            ? (() => {
-                const parsed = parsePortNodeId(node.id);
-                return parsed ? portNodeTooltip(parsed.protocol, parsed.port) : `Port ${node.label}`;
-              })()
+            ? portNodeTooltip(Number(node.label))
           : node.type === 'tunnel'
           ? `${node.label} · VPN tunnel to gateway`
           : node.type === 'gateway'
