@@ -80,15 +80,6 @@ function parentKeyForFlow(flowId: string, edges: NetworkMapEdge[]): string {
   return '__orphan__';
 }
 
-function parentKeyForPort(portId: string, edges: NetworkMapEdge[]): string {
-  for (const edge of edges) {
-    if (edge.target === portId && edge.kind === 'to_port') {
-      return edge.source;
-    }
-  }
-  return '__orphan__';
-}
-
 function nextFreeY(preferred: number, assigned: number[], gap: number): number {
   let y = preferred;
   const minGap = gap * 0.85;
@@ -188,35 +179,15 @@ export function layoutNetworkMap(
   }
 
   if (mode === 'flow') {
-    const portGroups = new Map<string, NetworkMapNode[]>();
-    for (const port of ports) {
-      const parent = parentKeyForPort(port.id, edges);
-      const list = portGroups.get(parent) ?? [];
-      list.push(port);
-      portGroups.set(parent, list);
-    }
     const assignedPortYs: number[] = [];
-    for (const [parentId, group] of portGroups.entries()) {
-      const parent = positioned.get(parentId);
-      const centerY = parent?.y ?? 220;
-      const ys = spreadYs(group.length, centerY, MIN_GAP);
-      group.forEach((port, index) => {
-        positioned.set(port.id, {
-          ...port,
-          x: columns.port,
-          y: nextFreeY(ys[index] ?? centerY, assignedPortYs, MIN_GAP),
-        });
+    const portYs = spreadYs(ports.length, 220, MIN_GAP);
+    ports.forEach((port, index) => {
+      positioned.set(port.id, {
+        ...port,
+        x: columns.port,
+        y: nextFreeY(portYs[index] ?? 220, assignedPortYs, MIN_GAP),
       });
-    }
-    for (const port of ports) {
-      if (!positioned.has(port.id)) {
-        positioned.set(port.id, {
-          ...port,
-          x: columns.port,
-          y: nextFreeY(220, assignedPortYs, MIN_GAP),
-        });
-      }
-    }
+    });
 
     const flowGroups = new Map<string, NetworkMapNode[]>();
     for (const flow of flows) {

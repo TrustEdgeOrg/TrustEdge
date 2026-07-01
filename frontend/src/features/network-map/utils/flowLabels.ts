@@ -95,18 +95,23 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-export function portNodeId(parentId: string, protocol: string, port: number): string {
-  return `port:${parentId}:${protocol}:${port}`;
+export function globalPortNodeId(protocol: string, port: number): string {
+  return `port:${protocol.toLowerCase()}:${port}`;
+}
+
+/** @deprecated Use globalPortNodeId — ports are network-wide, not per parent. */
+export function portNodeId(_parentId: string, protocol: string, port: number): string {
+  return globalPortNodeId(protocol, port);
 }
 
 export function parsePortNodeId(portId: string): { protocol: string; port: number } | null {
-  const match = portId.match(/^port:[^:]+:([a-z]+):(\d+)$/i);
+  const match = portId.match(/^port:([a-z]+):(\d+)$/i);
   if (!match) {
     return null;
   }
-  const port = Number(match[2]);
-  if (!Number.isFinite(port)) {
+  const portNum = Number(match[2]);
+  if (!Number.isFinite(portNum)) {
     return null;
   }
-  return { protocol: match[1].toLowerCase(), port };
+  return { protocol: match[1].toLowerCase(), port: portNum };
 }

@@ -1,5 +1,5 @@
 import { NetworkMapEdge, NetworkMapNode } from '../types/networkMap';
-import { parseFlowNode, portNodeId } from './flowLabels';
+import { parseFlowNode, globalPortNodeId } from './flowLabels';
 
 function addEdge(
   edges: NetworkMapEdge[],
@@ -26,8 +26,8 @@ function addEdge(
 }
 
 /**
- * Flow view (option B): insert a Port column between upstream nodes and destinations.
- * domain/app → port → destination (IP or hostname).
+ * Flow view: one Port node per protocol+number for the whole network (e.g. single TCP/443 hub).
+ * domain/app → shared port → destination (IP or hostname).
  */
 export function expandFlowToPortView(
   nodes: NetworkMapNode[],
@@ -62,8 +62,7 @@ export function expandFlowToPortView(
       continue;
     }
 
-    const parentId = edge.source;
-    const pid = portNodeId(parentId, parsed.protocol, parsed.port);
+    const pid = globalPortNodeId(parsed.protocol, parsed.port);
     if (!nodeMap.has(pid)) {
       nodeMap.set(pid, {
         id: pid,
@@ -77,7 +76,7 @@ export function expandFlowToPortView(
       label: parsed.destination,
     });
 
-    addEdge(outEdges, edgeMap, parentId, pid, 'to_port');
+    addEdge(outEdges, edgeMap, edge.source, pid, 'to_port');
     addEdge(outEdges, edgeMap, pid, flowNode.id, 'port_to_flow');
   }
 
