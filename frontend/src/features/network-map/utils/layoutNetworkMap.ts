@@ -256,7 +256,7 @@ export function pathColumnLabels(mode: NetworkMapLayoutMode): { key: string; lab
       { key: 'device', label: 'Devices' },
       { key: 'app', label: 'Processes' },
       { key: 'domain', label: 'DNS names' },
-      { key: 'flow', label: 'L4 sessions' },
+      { key: 'flow', label: 'Live connections' },
     ];
   }
   if (mode === 'path') {
