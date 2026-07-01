@@ -14,6 +14,7 @@ import HubIcon from '@mui/icons-material/Hub';
 import ScienceIcon from '@mui/icons-material/Science';
 import BlockIcon from '@mui/icons-material/Block';
 import RouteIcon from '@mui/icons-material/Route';
+import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
 import { useNetworkAttributionMap } from '../hooks/useNetworkAttributionMap';
 import { DEFAULT_NETWORK_MAP_MINUTES } from '../config/api';
 import {
@@ -93,7 +94,9 @@ function MapNodeGlyph({
       ? `${node.label} (foreground process)`
       : node.type === 'domain'
         ? `${node.label}${node.blocked ? ' · blocked' : ''}${simulatedBlocked ? ' · would lose access (what-if)' : ''}`
-        : node.type === 'tunnel'
+        : node.type === 'flow'
+          ? `${node.label} · L4 session`
+          : node.type === 'tunnel'
           ? `${node.label} · VPN tunnel to gateway`
           : node.type === 'gateway'
             ? `${node.label} · dnsmasq on EC2`
@@ -204,6 +207,12 @@ function edgeTooltip(
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
     return `${source} → ${target} · policy decision · ${edge.query_count} quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked} · click for path detail`;
   }
+  if (edge.kind === 'dns_to_flow') {
+    return `${source} → ${target} · DNS name correlated to L4 session`;
+  }
+  if (edge.kind === 'flow_session') {
+    return `${source} → ${target} · active TCP/UDP session via VPN gateway`;
+  }
   if (edge.kind === 'dns_direct') {
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
     return `${source} → ${target} · ${edge.query_count} DNS (no app yet)${blocked}`;
@@ -252,6 +261,9 @@ function edgeStroke(
   if (edge.kind === 'path_forward') {
     return edge.blocked_count > 0 ? theme.palette.error.main : theme.palette.success.main;
   }
+  if (edge.kind === 'dns_to_flow' || edge.kind === 'flow_session') {
+    return theme.palette.info.dark;
+  }
   if (edge.kind === 'dns_direct') {
     return theme.palette.text.disabled;
   }
@@ -268,11 +280,14 @@ export default function NetworkAttributionMapGraph({
   showHeader = true,
 }: NetworkAttributionMapGraphProps) {
   const theme = useTheme();
-  const { data, loading, error, liveConnected } = useNetworkAttributionMap(minutes);
+  const [flowViewMode, setFlowViewMode] = useState(false);
+  const { data, loading, error, liveConnected } = useNetworkAttributionMap(minutes, undefined, flowViewMode);
   const [whatIfMode, setWhatIfMode] = useState(false);
   const [pathViewMode, setPathViewMode] = useState(false);
   const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
+
+  const layoutMode = pathViewMode ? 'path' : flowViewMode ? 'flow' : 'attribution';
 
   const graphData = useMemo(() => {
     if (!data) {
@@ -288,8 +303,8 @@ export default function NetworkAttributionMapGraph({
     if (!graphData) {
       return null;
     }
-    return layoutNetworkMap(graphData.nodes, graphData.edges, pathViewMode ? 'path' : 'attribution');
-  }, [graphData, pathViewMode]);
+    return layoutNetworkMap(graphData.nodes, graphData.edges, layoutMode);
+  }, [graphData, layoutMode]);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, PositionedNode>();
@@ -337,8 +352,18 @@ export default function NetworkAttributionMapGraph({
 
   const handlePathViewChange = (enabled: boolean) => {
     setPathViewMode(enabled);
+    if (enabled) {
+      setFlowViewMode(false);
+    }
     if (!enabled) {
       setSelectedDomainId(null);
+    }
+  };
+
+  const handleFlowViewChange = (enabled: boolean) => {
+    setFlowViewMode(enabled);
+    if (enabled) {
+      setPathViewMode(false);
     }
   };
 
@@ -362,10 +387,11 @@ export default function NetworkAttributionMapGraph({
   const deviceCount = data?.nodes.filter((n) => n.type === 'device').length ?? 0;
   const appCount = data?.nodes.filter((n) => n.type === 'app').length ?? 0;
   const domainCount = data?.nodes.filter((n) => n.type === 'domain').length ?? 0;
+  const flowCount = data?.nodes.filter((n) => n.type === 'flow').length ?? 0;
 
   const landFill = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.06);
   const laneStroke = alpha(theme.palette.divider, 0.55);
-  const columnLabels = pathColumnLabels(pathViewMode ? 'path' : 'attribution');
+  const columnLabels = pathColumnLabels(layoutMode);
 
   return (
     <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
@@ -393,8 +419,27 @@ export default function NetworkAttributionMapGraph({
           <Chip size="small" variant="outlined" label={`${appCount} apps`} />
           <Chip size="small" variant="outlined" label={`${domainCount} destinations`} />
           {data && <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />}
+          {flowViewMode && flowCount > 0 && (
+            <Chip size="small" variant="outlined" label={`${flowCount} L4 sessions`} />
+          )}
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={flowViewMode}
+                onChange={(_, checked) => handleFlowViewChange(checked)}
+              />
+            }
+            label={
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <SettingsEthernetIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2">Flow view</Typography>
+              </Stack>
+            }
+            sx={{ m: 0 }}
+          />
           <FormControlLabel
             control={
               <Switch
@@ -429,6 +474,13 @@ export default function NetworkAttributionMapGraph({
           />
         </Stack>
       </Stack>
+
+      {flowViewMode && (
+        <Alert severity="info" sx={{ mb: 1.5 }} icon={<SettingsEthernetIcon fontSize="small" />}>
+          Flow view shows L4 sessions sampled from EC2 conntrack (TCP/UDP) and correlated to DNS names when
+          dnsmasq reply logs are available. Requires flow_watcher on the gateway host.
+        </Alert>
+      )}
 
       {pathViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<RouteIcon fontSize="small" />}>
@@ -499,7 +551,13 @@ export default function NetworkAttributionMapGraph({
           borderRadius: 1,
           overflow: 'auto',
           border: `1px solid ${
-            whatIfMode ? theme.palette.info.main : pathViewMode ? theme.palette.secondary.main : theme.palette.divider
+            whatIfMode
+              ? theme.palette.info.main
+              : pathViewMode
+                ? theme.palette.secondary.main
+                : flowViewMode
+                  ? theme.palette.info.dark
+                  : theme.palette.divider
           }`,
           bgcolor: landFill,
           minHeight: 300,
@@ -520,12 +578,14 @@ export default function NetworkAttributionMapGraph({
             component="svg"
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             preserveAspectRatio="xMidYMid meet"
-            sx={{ width: '100%', minWidth: pathViewMode ? 640 : undefined, height: 'auto', display: 'block', minHeight: 300 }}
+            sx={{ width: '100%', minWidth: flowViewMode || pathViewMode ? 640 : undefined, height: 'auto', display: 'block', minHeight: 300 }}
             role="img"
             aria-label={
-              pathViewMode
-                ? 'Network map with DNS path through WireGuard, gateway, and policy'
-                : 'Network map with devices, processes, and DNS destinations connected by arcs'
+              flowViewMode
+                ? 'Network map with DNS names and L4 flow sessions'
+                : pathViewMode
+                  ? 'Network map with DNS path through WireGuard, gateway, and policy'
+                  : 'Network map with devices, processes, and DNS destinations connected by arcs'
             }
           >
             {columnLabels.map(({ key, label }) => {
@@ -562,7 +622,9 @@ export default function NetworkAttributionMapGraph({
                 (edge.kind === 'dns' ||
                   edge.kind === 'dns_direct' ||
                   edge.kind === 'path_forward' ||
-                  edge.kind === 'path_egress');
+                  edge.kind === 'path_egress' ||
+                  edge.kind === 'dns_to_flow' ||
+                  edge.kind === 'flow_session');
               const stroke = edgeStroke(edge, theme, simulatedCut);
               const clickable =
                 pathViewMode && (edge.kind === 'path_forward' || edge.kind === 'dns' || edge.kind === 'dns_direct');
@@ -638,7 +700,12 @@ export default function NetworkAttributionMapGraph({
           <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 1.5 }}>
             <Chip size="small" variant="outlined" label="Teal pin = device" />
             <Chip size="small" variant="outlined" label="Center = process" />
-            {pathViewMode ? (
+            {flowViewMode ? (
+              <>
+                <Chip size="small" variant="outlined" label="Cyan = L4 session" sx={{ borderColor: 'info.dark', color: 'info.dark' }} />
+                <Chip size="small" variant="outlined" label="Domain → session = DNS correlated" />
+              </>
+            ) : pathViewMode ? (
               <>
                 <Chip size="small" variant="outlined" label="Purple = WireGuard" />
                 <Chip size="small" variant="outlined" label="Blue = TrustEdge DNS" />
@@ -680,7 +747,10 @@ export default function NetworkAttributionMapGraph({
             }}
           >
             {layout.nodes
-              .filter((node) => node.type !== 'tunnel' && node.type !== 'gateway' && node.type !== 'policy')
+              .filter(
+                (node) =>
+                  node.type !== 'tunnel' && node.type !== 'gateway' && node.type !== 'policy',
+              )
               .slice(0, 12)
               .map((node) => {
                 const style = getNodeIconStyle({

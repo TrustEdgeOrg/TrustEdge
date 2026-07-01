@@ -15,6 +15,7 @@ import BlockIcon from '@mui/icons-material/Block';
 import VpnLockIcon from '@mui/icons-material/VpnLock';
 import RouterIcon from '@mui/icons-material/Router';
 import GavelIcon from '@mui/icons-material/Gavel';
+import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
 
 export interface AppIconStyle {
   icon: ReactElement;
@@ -91,6 +92,14 @@ export function getInfraIconStyle(type: 'tunnel' | 'gateway' | 'policy'): AppIco
   };
 }
 
+export function getFlowIconStyle(): AppIconStyle {
+  return {
+    icon: <SettingsEthernetIcon fontSize="small" />,
+    color: '#0E7490',
+    bg: 'rgba(14, 116, 144, 0.12)',
+  };
+}
+
 export function getNodeIconStyle(node: {
   type: string;
   app_slug?: string | null;
@@ -104,6 +113,9 @@ export function getNodeIconStyle(node: {
   }
   if (node.type === 'domain') {
     return getDomainIconStyle(node.blocked);
+  }
+  if (node.type === 'flow') {
+    return getFlowIconStyle();
   }
   if (node.type === 'tunnel' || node.type === 'gateway' || node.type === 'policy') {
     return getInfraIconStyle(node.type);

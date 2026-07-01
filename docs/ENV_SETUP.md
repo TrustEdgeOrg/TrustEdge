@@ -128,6 +128,29 @@ Endpoint telemetry: foreground app time while VPN is connected, correlated with 
 | `CLIENT_ATTRIBUTION_POLL_SEC` | Foreground app poll interval | `30` |
 | `CLIENT_ATTRIBUTION_REPORT_SEC` | Batch report interval | `60` |
 
+### Network flows (backend + EC2 host)
+
+L4 session visibility from conntrack on the WireGuard host, correlated to DNS names on the map.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NETWORK_FLOWS_ENABLED` | Enable flow ingest and map merge | `true` |
+| `NETWORK_FLOWS_MAX_AGE_SEC` | Drop flow samples older than this | `300` |
+| `NETWORK_FLOWS_DNS_RESOLUTION_TTL_SEC` | DNS reply → IP cache TTL | `600` |
+| `NETWORK_FLOWS_MAP_LIMIT` | Max flow nodes merged into map | `80` |
+
+**EC2 host** (`dns-sync/flow_watcher.py`, systemd unit `trustedge-flow-watcher.service`):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VPN_POOL_CIDR` | WireGuard client subnet to filter conntrack | `10.0.0.0/24` |
+| `FLOW_POLL_INTERVAL` | Seconds between conntrack samples | `5` |
+| `FLOW_BATCH_SIZE` | Max flows per POST | `100` |
+| `DNS_INGEST_TOKEN` | Same as backend / log watcher | — |
+| `API_BASE_URL` | Backend URL | `http://localhost:8000` |
+
+Requires `conntrack` on the host (`apt install conntrack`). DNS reply parsing for IP correlation runs in `dns_log_watcher.py` (posts to `/network-flows/dns-resolutions/bulk`).
+
 ### Frontend
 
 | Variable | Description | Production |

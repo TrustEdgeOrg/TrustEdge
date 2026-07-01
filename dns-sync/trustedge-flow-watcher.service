@@ -1,0 +1,28 @@
+[Unit]
+Description=TrustEdge Flow Watcher - VPN client L4 flow sampling (conntrack)
+After=network.target docker.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ubuntu/trustedge/dns-sync/flow_watcher.py
+Restart=always
+RestartSec=5
+User=root
+WorkingDirectory=/home/ubuntu/trustedge/dns-sync
+
+Environment=VPN_POOL_CIDR=10.0.0.0/24
+Environment=API_BASE_URL=http://localhost:8000
+Environment=FLOW_POLL_INTERVAL=5
+Environment=FLOW_BATCH_SIZE=100
+Environment=LOG_JSON=1
+Environment=LOG_LEVEL=INFO
+# Zero Trust: require when backend DNS_INGEST_TOKEN is set
+# Environment=DNS_INGEST_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trustedge-flow-watcher
+
+[Install]
+WantedBy=multi-user.target

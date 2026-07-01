@@ -12,6 +12,8 @@ from app.features.network_attribution.schemas.network_attribution import (
     NetworkMapResponse,
 )
 from app.features.network_attribution.services.network_attribution_service import NetworkAttributionService
+from app.features.network_flows.services.flow_map_service import merge_flows_into_map
+from app.shared.config import settings
 from app.shared.admin_auth import verify_admin_api_token
 from app.shared.dependencies import get_db
 from app.shared.device_auth import AuthenticatedDevice, get_authenticated_device
@@ -83,7 +85,11 @@ def summarize_device_network_attribution(
 @router.get("/network-attribution/map", response_model=NetworkMapResponse)
 def network_attribution_map(
     minutes: int = Query(default=1, ge=1, le=60),
+    include_flows: bool = Query(default=False, description="Attach recent L4 flows to the map"),
     _: None = Depends(verify_admin_api_token),
     service: NetworkAttributionService = Depends(get_network_attribution_service),
 ):
-    return service.build_map(minutes=minutes)
+    base = service.build_map(minutes=minutes)
+    if include_flows and settings.NETWORK_FLOWS_ENABLED:
+        return merge_flows_into_map(base, minutes=minutes)
+    return base

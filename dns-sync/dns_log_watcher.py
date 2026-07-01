@@ -40,6 +40,17 @@ QUERY_PATTERN = re.compile(
     r'from\s+(\S+)'                            # client IP
 )
 
+REPLY_PATTERN = re.compile(
+    r'^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})\s+'
+    r'dnsmasq\[\d+\]:\s+'
+    r'reply(?:\[\w+\])?\s+'
+    r'(\S+)\s+'
+    r'is\s+'
+    r'(\S+)'
+)
+
+FLOW_RESOLUTIONS_ENABLED = os.getenv('FLOW_RESOLUTIONS_ENABLED', 'true').lower() in ('1', 'true', 'yes')
+
 
 def load_blocked_domains(config_path: str) -> Set[str]:
     blocked = set()
@@ -107,43 +118,75 @@ def parse_timestamp(timestamp_str: str) -> Optional[datetime]:
         return None
 
 
-def parse_log_lines(lines: List[str], blocked_domains: Set[str]) -> List[Dict[str, Any]]:
-    queries = []
+def parse_log_lines(
+    lines: List[str],
+    blocked_domains: Set[str],
+    pending_clients: Optional[Dict[str, tuple[str, datetime]]] = None,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    queries: List[Dict[str, Any]] = []
+    resolutions: List[Dict[str, Any]] = []
     seen = set()
+    pending = pending_clients if pending_clients is not None else {}
 
     for line in lines:
         match = QUERY_PATTERN.search(line)
-        if not match:
+        if match:
+            timestamp_str, query_type, domain, client_ip = match.groups()
+            timestamp = parse_timestamp(timestamp_str)
+            if not timestamp:
+                continue
+
+            if domain.endswith('.in-addr.arpa') or domain.endswith('.ip6.arpa'):
+                continue
+            if is_noise_domain(domain):
+                continue
+
+            dedup_key = (timestamp.isoformat(), domain.lower(), client_ip)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            pending[domain.lower()] = (client_ip, timestamp)
+
+            is_blocked = domain.lower() in blocked_domains
+            action = "blocked" if is_blocked else "forwarded"
+
+            queries.append({
+                "timestamp": timestamp.isoformat(),
+                "client_ip": client_ip,
+                "domain": domain,
+                "query_type": query_type,
+                "action": action,
+                "blocked": is_blocked
+            })
             continue
 
-        timestamp_str, query_type, domain, client_ip = match.groups()
+        reply = REPLY_PATTERN.search(line)
+        if not reply:
+            continue
+
+        timestamp_str, domain, resolved_ip = reply.groups()
         timestamp = parse_timestamp(timestamp_str)
         if not timestamp:
             continue
 
-        if domain.endswith('.in-addr.arpa') or domain.endswith('.ip6.arpa'):
-            continue
-        if is_noise_domain(domain):
+        ctx = pending.get(domain.lower())
+        if not ctx:
             continue
 
-        dedup_key = (timestamp.isoformat(), domain.lower(), client_ip)
-        if dedup_key in seen:
+        client_ip, _query_ts = ctx
+        if resolved_ip.endswith('.in-addr.arpa') or resolved_ip.endswith('.ip6.arpa'):
             continue
-        seen.add(dedup_key)
 
-        is_blocked = domain.lower() in blocked_domains
-        action = "blocked" if is_blocked else "forwarded"
-
-        queries.append({
+        resolutions.append({
             "timestamp": timestamp.isoformat(),
             "client_ip": client_ip,
             "domain": domain,
-            "query_type": query_type,
-            "action": action,
-            "blocked": is_blocked
+            "resolved_ip": resolved_ip,
+            "query_type": "A",
         })
 
-    return queries
+    return queries, resolutions
 
 
 def send_to_api(queries: List[Dict[str, Any]], api_url: str) -> bool:
@@ -212,6 +255,38 @@ def send_to_api(queries: List[Dict[str, Any]], api_url: str) -> bool:
         return False
 
 
+def send_resolutions_to_api(resolutions: List[Dict[str, Any]], api_url: str) -> bool:
+    import urllib.request
+    import urllib.error
+
+    if not resolutions or not FLOW_RESOLUTIONS_ENABLED:
+        return True
+
+    url = f"{api_url.rstrip('/')}/network-flows/dns-resolutions/bulk"
+    payload = json.dumps({"resolutions": resolutions}).encode('utf-8')
+
+    try:
+        headers = {'Content-Type': 'application/json'}
+        if DNS_INGEST_TOKEN:
+            headers['Authorization'] = f"Bearer {DNS_INGEST_TOKEN}"
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers=headers,
+            method='POST'
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status in (200, 201)
+    except Exception as e:
+        logger.warning(
+            "DNS resolution ingest failed",
+            extra=structured_extra("dns_resolution_ingest_failed", error=str(e)),
+        )
+        return False
+
+
 def wait_for_api(api_url: str, max_retries: int = 30, retry_interval: int = 10):
     import urllib.request
     import urllib.error
@@ -248,6 +323,8 @@ def main():
 
     last_flush = time.time()
     pending: List[Dict[str, Any]] = []
+    pending_resolutions: List[Dict[str, Any]] = []
+    reply_context: Dict[str, tuple[str, datetime]] = {}
 
     while True:
         try:
@@ -271,9 +348,11 @@ def main():
 
             if new_data:
                 lines = [l for l in new_data.splitlines() if l.strip()]
-                parsed = parse_log_lines(lines, blocked_domains)
-                if parsed:
-                    pending.extend(parsed)
+                parsed_queries, parsed_resolutions = parse_log_lines(lines, blocked_domains, reply_context)
+                if parsed_queries:
+                    pending.extend(parsed_queries)
+                if parsed_resolutions:
+                    pending_resolutions.extend(parsed_resolutions)
 
             should_flush = len(pending) >= BATCH_SIZE or (pending and (now - last_flush) >= FLUSH_INTERVAL)
             if should_flush:
@@ -283,6 +362,11 @@ def main():
                     pending = pending[len(batch):]
                     save_position(STATE_FILE_PATH, position)
                 last_flush = now
+
+            if pending_resolutions and (now - last_flush) >= FLUSH_INTERVAL:
+                resolution_batch = pending_resolutions[:BATCH_SIZE]
+                if send_resolutions_to_api(resolution_batch, API_BASE_URL):
+                    pending_resolutions = pending_resolutions[len(resolution_batch):]
 
             time.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:

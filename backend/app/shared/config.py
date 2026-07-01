@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     CLIENT_ATTRIBUTION_POLL_SEC: float = 30.0
     CLIENT_ATTRIBUTION_REPORT_SEC: float = 60.0
 
+    # L4 flow twin (conntrack ingest on EC2 host)
+    NETWORK_FLOWS_ENABLED: bool = True
+    NETWORK_FLOWS_MAX_AGE_SEC: int = 300
+    NETWORK_FLOWS_DNS_RESOLUTION_TTL_SEC: int = 600
+    NETWORK_FLOWS_MAP_LIMIT: int = 80
+
     # Reject VPN enroll when login GeoIP is in these countries (comma or JSON list), e.g. IR
     VPN_LOGIN_GEO_BLOCK_ENABLED: bool = True
     BLOCKED_VPN_LOGIN_COUNTRIES: str = "IR"

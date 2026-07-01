@@ -1,4 +1,4 @@
-export type NetworkMapNodeType = 'device' | 'app' | 'domain' | 'tunnel' | 'gateway' | 'policy';
+export type NetworkMapNodeType = 'device' | 'app' | 'domain' | 'flow' | 'tunnel' | 'gateway' | 'policy';
 
 export type NetworkMapEdgeKind =
   | 'foreground'
@@ -7,9 +7,11 @@ export type NetworkMapEdgeKind =
   | 'path_egress'
   | 'path_tunnel'
   | 'path_resolve'
-  | 'path_forward';
+  | 'path_forward'
+  | 'flow_session'
+  | 'dns_to_flow';
 
-export type NetworkMapLayoutMode = 'attribution' | 'path';
+export type NetworkMapLayoutMode = 'attribution' | 'path' | 'flow';
 
 export interface NetworkMapNode {
   id: string;

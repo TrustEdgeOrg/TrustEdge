@@ -111,6 +111,18 @@ class NetworkAttributionService:
 
         return ResolvedAttribution(app_slug=ctx.app_slug, app_display_name=ctx.app_display_name)
 
+    def resolve_attribution_for_client_ip(
+        self,
+        client_ip: str,
+        observed_at,
+    ) -> Optional[ResolvedAttribution]:
+        from app.features.devices.repositories.device_repository import DeviceRepository
+
+        device = DeviceRepository(self.db).get_by_client_ip(client_ip)
+        if device is None:
+            return None
+        return self.resolve_attribution(device.id, observed_at)
+
     def list_hourly(self, device_id: int, *, hours: int = 168, app_slug: Optional[str] = None) -> AppUsageHourlyListResponse:
         hours = max(1, min(hours, 24 * 30))
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
