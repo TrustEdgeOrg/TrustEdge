@@ -12,6 +12,9 @@ import AppsIcon from '@mui/icons-material/Apps';
 import DnsIcon from '@mui/icons-material/Dns';
 import ComputerIcon from '@mui/icons-material/Computer';
 import BlockIcon from '@mui/icons-material/Block';
+import VpnLockIcon from '@mui/icons-material/VpnLock';
+import RouterIcon from '@mui/icons-material/Router';
+import GavelIcon from '@mui/icons-material/Gavel';
 
 export interface AppIconStyle {
   icon: ReactElement;
@@ -64,4 +67,46 @@ export function getDomainIconStyle(blocked?: boolean | null): AppIconStyle {
     color: '#1565C0',
     bg: 'rgba(21, 101, 192, 0.1)',
   };
+}
+
+export function getInfraIconStyle(type: 'tunnel' | 'gateway' | 'policy'): AppIconStyle {
+  if (type === 'tunnel') {
+    return {
+      icon: <VpnLockIcon fontSize="small" />,
+      color: '#6D28D9',
+      bg: 'rgba(109, 40, 217, 0.12)',
+    };
+  }
+  if (type === 'gateway') {
+    return {
+      icon: <RouterIcon fontSize="small" />,
+      color: '#0369A1',
+      bg: 'rgba(3, 105, 161, 0.12)',
+    };
+  }
+  return {
+    icon: <GavelIcon fontSize="small" />,
+    color: '#B45309',
+    bg: 'rgba(180, 83, 9, 0.12)',
+  };
+}
+
+export function getNodeIconStyle(node: {
+  type: string;
+  app_slug?: string | null;
+  blocked?: boolean | null;
+}): AppIconStyle {
+  if (node.type === 'device') {
+    return getDeviceIconStyle();
+  }
+  if (node.type === 'app') {
+    return getAppIconStyle(node.app_slug);
+  }
+  if (node.type === 'domain') {
+    return getDomainIconStyle(node.blocked);
+  }
+  if (node.type === 'tunnel' || node.type === 'gateway' || node.type === 'policy') {
+    return getInfraIconStyle(node.type);
+  }
+  return getAppIconStyle(null);
 }

@@ -1,16 +1,33 @@
-import { NetworkMapEdge, NetworkMapNode, PositionedNode } from '../types/networkMap';
+import { NetworkMapEdge, NetworkMapLayoutMode, NetworkMapNode, PositionedNode } from '../types/networkMap';
 
 const PAD_Y = 56;
 const MIN_GAP = 44;
-const COL_DEVICE = 130;
-const COL_APP = 380;
-const COL_DOMAIN = 640;
+
+const COL_ATTRIBUTION = {
+  device: 130,
+  app: 380,
+  domain: 640,
+} as const;
+
+const COL_PATH = {
+  device: 80,
+  app: 175,
+  tunnel: 270,
+  gateway: 365,
+  policy: 460,
+  domain: 555,
+} as const;
+
+export const PATH_LAYOUT_WIDTH = 640;
+export const ATTRIBUTION_LAYOUT_WIDTH = 720;
 
 export interface NetworkMapLayout {
   nodes: PositionedNode[];
   edges: NetworkMapEdge[];
   width: number;
   height: number;
+  mode: NetworkMapLayoutMode;
+  columnGuides: Record<string, number>;
 }
 
 function spreadYs(count: number, centerY: number, gap: number): number[] {
@@ -23,18 +40,16 @@ function spreadYs(count: number, centerY: number, gap: number): number[] {
   return Array.from({ length: count }, (_, index) => centerY + (index - (count - 1) / 2) * gap);
 }
 
-function parentKeyForDomain(
-  domainId: string,
-  edges: NetworkMapEdge[],
-): string {
+function parentKeyForDomain(domainId: string, edges: NetworkMapEdge[]): string {
   for (const edge of edges) {
     if (edge.target !== domainId) {
       continue;
     }
-    if (edge.kind === 'dns') {
-      return edge.source;
-    }
-    if (edge.kind === 'dns_direct') {
+    if (
+      edge.kind === 'dns' ||
+      edge.kind === 'dns_direct' ||
+      edge.kind === 'path_forward'
+    ) {
       return edge.source;
     }
   }
@@ -64,10 +79,15 @@ function nextFreeY(preferred: number, assigned: number[], gap: number): number {
 export function layoutNetworkMap(
   nodes: NetworkMapNode[],
   edges: NetworkMapEdge[],
+  mode: NetworkMapLayoutMode = 'attribution',
 ): NetworkMapLayout {
+  const columns = mode === 'path' ? COL_PATH : COL_ATTRIBUTION;
+  const width = mode === 'path' ? PATH_LAYOUT_WIDTH : ATTRIBUTION_LAYOUT_WIDTH;
+
   const devices = nodes.filter((n) => n.type === 'device').sort((a, b) => a.label.localeCompare(b.label));
   const apps = nodes.filter((n) => n.type === 'app').sort((a, b) => a.label.localeCompare(b.label));
   const domains = nodes.filter((n) => n.type === 'domain').sort((a, b) => a.label.localeCompare(b.label));
+  const infra = nodes.filter((n) => n.type === 'tunnel' || n.type === 'gateway' || n.type === 'policy');
 
   const domainGroups = new Map<string, NetworkMapNode[]>();
   for (const domain of domains) {
@@ -80,13 +100,26 @@ export function layoutNetworkMap(
   const positioned = new Map<string, PositionedNode>();
   const deviceYs = spreadYs(devices.length, 220, MIN_GAP);
   devices.forEach((device, index) => {
-    positioned.set(device.id, { ...device, x: COL_DEVICE, y: deviceYs[index] ?? 220 });
+    positioned.set(device.id, { ...device, x: columns.device, y: deviceYs[index] ?? 220 });
   });
 
   const appYs = spreadYs(apps.length, 220, MIN_GAP);
   apps.forEach((app, index) => {
-    positioned.set(app.id, { ...app, x: COL_APP, y: appYs[index] ?? 220 });
+    positioned.set(app.id, { ...app, x: columns.app, y: appYs[index] ?? 220 });
   });
+
+  if (mode === 'path') {
+    const spineY = 220;
+    for (const node of infra) {
+      const x =
+        node.type === 'tunnel'
+          ? columns.tunnel
+          : node.type === 'gateway'
+            ? columns.gateway
+            : columns.policy;
+      positioned.set(node.id, { ...node, x, y: spineY });
+    }
+  }
 
   const assignedDomainYs: number[] = [];
 
@@ -97,7 +130,7 @@ export function layoutNetworkMap(
     group.forEach((domain, index) => {
       positioned.set(domain.id, {
         ...domain,
-        x: COL_DOMAIN,
+        x: columns.domain,
         y: nextFreeY(ys[index] ?? centerY, assignedDomainYs, MIN_GAP),
       });
     });
@@ -105,7 +138,11 @@ export function layoutNetworkMap(
 
   for (const domain of domains) {
     if (!positioned.has(domain.id)) {
-      positioned.set(domain.id, { ...domain, x: COL_DOMAIN, y: nextFreeY(220, assignedDomainYs, MIN_GAP) });
+      positioned.set(domain.id, {
+        ...domain,
+        x: columns.domain,
+        y: nextFreeY(220, assignedDomainYs, MIN_GAP),
+      });
     }
   }
 
@@ -120,8 +157,10 @@ export function layoutNetworkMap(
   return {
     nodes: shifted,
     edges,
-    width: 720,
+    width,
     height,
+    mode,
+    columnGuides: columns as Record<string, number>,
   };
 }
 
@@ -150,4 +189,22 @@ export function shortenLabel(label: string, max = 18): string {
     }
   }
   return `${label.slice(0, max - 1)}…`;
+}
+
+export function pathColumnLabels(mode: NetworkMapLayoutMode): { key: string; label: string }[] {
+  if (mode === 'path') {
+    return [
+      { key: 'device', label: 'Devices' },
+      { key: 'app', label: 'Processes' },
+      { key: 'tunnel', label: 'WireGuard' },
+      { key: 'gateway', label: 'DNS' },
+      { key: 'policy', label: 'Policy' },
+      { key: 'domain', label: 'Destinations' },
+    ];
+  }
+  return [
+    { key: 'device', label: 'Devices' },
+    { key: 'app', label: 'Processes' },
+    { key: 'domain', label: 'Destinations' },
+  ];
 }
