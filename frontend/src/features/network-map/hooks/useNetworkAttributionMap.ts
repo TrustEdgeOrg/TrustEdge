@@ -67,14 +67,11 @@ export function useNetworkAttributionMap(
     }
   }, []);
 
-  const includeFlowsRef = useRef(includeFlows);
-  includeFlowsRef.current = includeFlows;
-
   const load = useCallback(async () => {
     setError(null);
     try {
       await loadDeviceIndex();
-      const response = await fetchNetworkAttributionMap(minutes, includeFlowsRef.current);
+      const response = await fetchNetworkAttributionMap(minutes, includeFlows);
       for (const node of response.nodes) {
         if (node.type === 'device' && node.client_ip && node.device_id != null) {
           ipToDeviceRef.current.set(node.client_ip, {
