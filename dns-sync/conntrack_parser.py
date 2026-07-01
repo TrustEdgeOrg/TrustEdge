@@ -21,6 +21,15 @@ class ParsedFlow:
 
 
 _KV_RE = re.compile(r"(\w+)=([^\s]+)")
+_PROTO_RE = re.compile(r"^\S+\s+\d+\s+(tcp|udp|icmp)\b", re.IGNORECASE)
+
+
+def _first_fields(line: str) -> dict[str, str]:
+    """Conntrack extended lines repeat src/dst/sport/dport for the reply tuple — keep originals."""
+    fields: dict[str, str] = {}
+    for key, value in _KV_RE.findall(line):
+        fields.setdefault(key, value)
+    return fields
 
 
 def _parse_int(value: str) -> Optional[int]:
@@ -41,7 +50,7 @@ def parse_conntrack_line(line: str, *, vpn_cidr: str) -> Optional[ParsedFlow]:
     except ValueError:
         return None
 
-    fields = dict(_KV_RE.findall(text))
+    fields = _first_fields(text)
     src = fields.get("src")
     dst = fields.get("dst")
     if not src or not dst:
@@ -63,7 +72,8 @@ def parse_conntrack_line(line: str, *, vpn_cidr: str) -> Optional[ParsedFlow]:
     if dst_ip in network:
         return None
 
-    proto = (fields.get("proto") or "tcp").lower()
+    proto_match = _PROTO_RE.search(text)
+    proto = (proto_match.group(1) if proto_match else fields.get("proto") or "tcp").lower()
     if proto not in {"tcp", "udp", "icmp"}:
         return None
 
