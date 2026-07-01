@@ -576,8 +576,8 @@ export default function NetworkAttributionMapGraph({
 
       {flowViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<SettingsEthernetIcon fontSize="small" />}>
-          <strong>Ports</strong> group live connections (e.g. <code>443</code> = HTTPS). The right column shows
-          where each connection goes (hostname or IP). Turn on <strong>What-if</strong> to simulate blocking a port.
+          <strong>Ports</strong> group live connections network-wide (one shared <code>443</code> hub for all HTTPS).
+          Turn on <strong>What-if</strong> to simulate blocking a port for the whole VPN.
         </Alert>
       )}
 
