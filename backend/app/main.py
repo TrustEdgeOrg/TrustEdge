@@ -23,6 +23,7 @@ from app.features.dashboard.routes.dashboard_route import router as dashboard_ro
 from app.features.network_attribution.routes.network_attribution_route import (
     router as network_attribution_router,
 )
+from app.features.network_flows.routes.network_flow_route import router as network_flow_router
 from app.features.twin.routes.twin_route import router as twin_router
 from app.features.policy.startup import warmup_policy_packs
 from app.shared.redis_client import close_redis
@@ -142,5 +143,6 @@ app.include_router(vpn_router)
 app.include_router(usage_router)
 app.include_router(network_attribution_router)
 app.include_router(twin_router)
+app.include_router(network_flow_router)
 app.include_router(vpn_topology_router)
 app.include_router(dashboard_router)

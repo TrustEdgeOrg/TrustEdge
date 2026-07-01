@@ -29,7 +29,11 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>` when the token
 | `DELETE` | `/devices/{id}/quarantine` | Release client from quarantine early |
 | `GET` | `/devices/{id}/network-attribution` | Hourly per-app usage rollups (`hours`, optional `app_slug`) |
 | `GET` | `/devices/{id}/network-attribution/summary` | Top apps with avg minutes/hour and total hours |
-| `GET` | `/network-attribution/map` | Device → app → DNS destination graph (`minutes`, default 1) |
+| `GET` | `/network-attribution/map` | Device → app → DNS destination graph (`minutes`, default 1; `include_flows=true` adds L4 session nodes from conntrack) |
+| **Network flows** | | |
+| `POST` | `/network-flows/bulk` | Ingest conntrack flow samples (`DNS_INGEST_TOKEN`) |
+| `POST` | `/network-flows/dns-resolutions/bulk` | Ingest DNS reply → IP mappings for flow correlation |
+| `GET` | `/network-flows/live` | Recent L4 flows (admin token) |
 | **VPN** | | |
 | `GET` | `/v1/client-config` | Public client bootstrap (enroll token, API paths, defaults) |
 | `POST` | `/v1/enroll` | WireGuard device enrollment |

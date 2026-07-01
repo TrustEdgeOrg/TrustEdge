@@ -26,6 +26,7 @@ function emptyMap(minutes: number): NetworkMapResponse {
 export function useNetworkAttributionMap(
   minutes = DEFAULT_NETWORK_MAP_MINUTES,
   pollSec = DEFAULT_NETWORK_MAP_POLL_SEC,
+  includeFlows = false,
 ) {
   const [data, setData] = useState<NetworkMapResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,11 +67,14 @@ export function useNetworkAttributionMap(
     }
   }, []);
 
+  const includeFlowsRef = useRef(includeFlows);
+  includeFlowsRef.current = includeFlows;
+
   const load = useCallback(async () => {
     setError(null);
     try {
       await loadDeviceIndex();
-      const response = await fetchNetworkAttributionMap(minutes);
+      const response = await fetchNetworkAttributionMap(minutes, includeFlowsRef.current);
       for (const node of response.nodes) {
         if (node.type === 'device' && node.client_ip && node.device_id != null) {
           ipToDeviceRef.current.set(node.client_ip, {
@@ -86,7 +90,7 @@ export function useNetworkAttributionMap(
     } finally {
       setLoading(false);
     }
-  }, [minutes, loadDeviceIndex, mergeApiAndLive]);
+  }, [minutes, loadDeviceIndex, mergeApiAndLive, includeFlows]);
 
   useEffect(() => {
     liveQueriesRef.current = [];

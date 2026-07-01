@@ -18,8 +18,16 @@ const COL_PATH = {
   domain: 555,
 } as const;
 
+const COL_FLOW = {
+  device: 100,
+  app: 250,
+  domain: 430,
+  flow: 610,
+} as const;
+
 export const PATH_LAYOUT_WIDTH = 640;
 export const ATTRIBUTION_LAYOUT_WIDTH = 720;
+export const FLOW_LAYOUT_WIDTH = 720;
 
 export interface NetworkMapLayout {
   nodes: PositionedNode[];
@@ -56,6 +64,18 @@ function parentKeyForDomain(domainId: string, edges: NetworkMapEdge[]): string {
   return '__orphan__';
 }
 
+function parentKeyForFlow(flowId: string, edges: NetworkMapEdge[]): string {
+  for (const edge of edges) {
+    if (edge.target !== flowId) {
+      continue;
+    }
+    if (edge.kind === 'dns_to_flow' || edge.kind === 'flow_session') {
+      return edge.source;
+    }
+  }
+  return '__orphan__';
+}
+
 function nextFreeY(preferred: number, assigned: number[], gap: number): number {
   let y = preferred;
   const minGap = gap * 0.85;
@@ -81,12 +101,19 @@ export function layoutNetworkMap(
   edges: NetworkMapEdge[],
   mode: NetworkMapLayoutMode = 'attribution',
 ): NetworkMapLayout {
-  const columns = mode === 'path' ? COL_PATH : COL_ATTRIBUTION;
-  const width = mode === 'path' ? PATH_LAYOUT_WIDTH : ATTRIBUTION_LAYOUT_WIDTH;
+  const columns =
+    mode === 'path' ? COL_PATH : mode === 'flow' ? COL_FLOW : COL_ATTRIBUTION;
+  const width =
+    mode === 'path'
+      ? PATH_LAYOUT_WIDTH
+      : mode === 'flow'
+        ? FLOW_LAYOUT_WIDTH
+        : ATTRIBUTION_LAYOUT_WIDTH;
 
   const devices = nodes.filter((n) => n.type === 'device').sort((a, b) => a.label.localeCompare(b.label));
   const apps = nodes.filter((n) => n.type === 'app').sort((a, b) => a.label.localeCompare(b.label));
   const domains = nodes.filter((n) => n.type === 'domain').sort((a, b) => a.label.localeCompare(b.label));
+  const flows = nodes.filter((n) => n.type === 'flow').sort((a, b) => a.label.localeCompare(b.label));
   const infra = nodes.filter((n) => n.type === 'tunnel' || n.type === 'gateway' || n.type === 'policy');
 
   const domainGroups = new Map<string, NetworkMapNode[]>();
@@ -146,6 +173,38 @@ export function layoutNetworkMap(
     }
   }
 
+  if (mode === 'flow') {
+    const flowGroups = new Map<string, NetworkMapNode[]>();
+    for (const flow of flows) {
+      const parent = parentKeyForFlow(flow.id, edges);
+      const list = flowGroups.get(parent) ?? [];
+      list.push(flow);
+      flowGroups.set(parent, list);
+    }
+    const assignedFlowYs: number[] = [];
+    for (const [parentId, group] of flowGroups.entries()) {
+      const parent = positioned.get(parentId);
+      const centerY = parent?.y ?? 220;
+      const ys = spreadYs(group.length, centerY, MIN_GAP);
+      group.forEach((flow, index) => {
+        positioned.set(flow.id, {
+          ...flow,
+          x: columns.flow,
+          y: nextFreeY(ys[index] ?? centerY, assignedFlowYs, MIN_GAP),
+        });
+      });
+    }
+    for (const flow of flows) {
+      if (!positioned.has(flow.id)) {
+        positioned.set(flow.id, {
+          ...flow,
+          x: columns.flow,
+          y: nextFreeY(220, assignedFlowYs, MIN_GAP),
+        });
+      }
+    }
+  }
+
   const allPositioned = Array.from(positioned.values());
   const maxY = allPositioned.reduce((max, node) => Math.max(max, node.y), PAD_Y);
   const minY = allPositioned.reduce((min, node) => Math.min(min, node.y), PAD_Y);
@@ -192,6 +251,14 @@ export function shortenLabel(label: string, max = 18): string {
 }
 
 export function pathColumnLabels(mode: NetworkMapLayoutMode): { key: string; label: string }[] {
+  if (mode === 'flow') {
+    return [
+      { key: 'device', label: 'Devices' },
+      { key: 'app', label: 'Processes' },
+      { key: 'domain', label: 'DNS names' },
+      { key: 'flow', label: 'L4 sessions' },
+    ];
+  }
   if (mode === 'path') {
     return [
       { key: 'device', label: 'Devices' },
