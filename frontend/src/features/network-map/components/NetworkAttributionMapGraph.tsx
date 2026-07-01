@@ -13,16 +13,29 @@ import { alpha, keyframes, useTheme } from '@mui/material/styles';
 import HubIcon from '@mui/icons-material/Hub';
 import ScienceIcon from '@mui/icons-material/Science';
 import BlockIcon from '@mui/icons-material/Block';
+import RouteIcon from '@mui/icons-material/Route';
 import { useNetworkAttributionMap } from '../hooks/useNetworkAttributionMap';
 import { DEFAULT_NETWORK_MAP_MINUTES } from '../config/api';
-import { edgePath, layoutNetworkMap, shortenLabel } from '../utils/layoutNetworkMap';
-import { getAppIconStyle, getDeviceIconStyle, getDomainIconStyle } from '../utils/appIcons';
+import {
+  edgePath,
+  layoutNetworkMap,
+  pathColumnLabels,
+  shortenLabel,
+} from '../utils/layoutNetworkMap';
+import { getNodeIconStyle } from '../utils/appIcons';
 import { NetworkMapEdge, NetworkMapNode, PositionedNode } from '../types/networkMap';
 import {
   computeWhatIfSimulation,
   edgeKey,
   toggleDisabledApp,
+  WhatIfSimulationResult,
 } from '../utils/whatIfSimulation';
+import { expandToPathView } from '../utils/expandPathView';
+import {
+  buildPathFlowDetailsForDomain,
+  PathFlowDetail,
+} from '../utils/buildPathFlowDetail';
+import PathFlowDetailPanel from './PathFlowDetailPanel';
 
 const NODE_R = 11;
 const ICON_SIZE = 13;
@@ -36,59 +49,91 @@ const flowPulse = keyframes`
 interface MapNodeGlyphProps {
   node: PositionedNode;
   whatIfMode: boolean;
+  pathViewMode: boolean;
   appDisabled: boolean;
   simulatedBlocked: boolean;
+  selected: boolean;
   onSelectApp?: (nodeId: string) => void;
+  onSelectDomain?: (nodeId: string) => void;
 }
 
 function MapNodeGlyph({
   node,
   whatIfMode,
+  pathViewMode,
   appDisabled,
   simulatedBlocked,
+  selected,
   onSelectApp,
+  onSelectDomain,
 }: MapNodeGlyphProps) {
   const theme = useTheme();
-  const style =
-    node.type === 'device'
-      ? getDeviceIconStyle()
-      : node.type === 'app'
-        ? getAppIconStyle(node.app_slug)
-        : getDomainIconStyle(node.blocked || simulatedBlocked);
+  const style = getNodeIconStyle({
+    type: node.type,
+    app_slug: node.app_slug,
+    blocked: node.blocked || simulatedBlocked,
+  });
+
+  const isInfra = node.type === 'tunnel' || node.type === 'gateway' || node.type === 'policy';
 
   const ring = appDisabled
     ? theme.palette.error.main
-    : node.type === 'device' && node.fresh
-      ? theme.palette.success.main
-      : node.type === 'domain' && (node.blocked || simulatedBlocked)
-        ? theme.palette.error.main
-        : alpha(style.color, 0.85);
+    : selected
+      ? theme.palette.info.main
+      : node.type === 'device' && node.fresh
+        ? theme.palette.success.main
+        : node.type === 'domain' && (node.blocked || simulatedBlocked)
+          ? theme.palette.error.main
+          : isInfra
+            ? style.color
+            : alpha(style.color, 0.85);
 
   const tooltipParts = [
     node.type === 'app'
       ? `${node.label} (foreground process)`
       : node.type === 'domain'
         ? `${node.label}${node.blocked ? ' · blocked' : ''}${simulatedBlocked ? ' · would lose access (what-if)' : ''}`
-        : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`,
+        : node.type === 'tunnel'
+          ? `${node.label} · VPN tunnel to gateway`
+          : node.type === 'gateway'
+            ? `${node.label} · dnsmasq on EC2`
+            : node.type === 'policy'
+              ? `${node.label} · allow / block decision`
+              : `${node.label}${node.client_ip ? ` · ${node.client_ip}` : ''}`,
   ];
   if (whatIfMode && node.type === 'app') {
     tooltipParts.push(appDisabled ? 'Click to re-enable in what-if' : 'Click to disable in what-if');
   }
+  if (pathViewMode && node.type === 'domain') {
+    tooltipParts.push('Click to inspect DNS path');
+  }
 
-  const selectable = whatIfMode && node.type === 'app';
+  const selectableApp = whatIfMode && node.type === 'app';
+  const selectableDomain = pathViewMode && node.type === 'domain';
 
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
-      style={{ cursor: selectable ? 'pointer' : 'default', opacity: appDisabled ? 0.45 : 1 }}
-      onClick={selectable ? () => onSelectApp?.(node.id) : undefined}
+      style={{
+        cursor: selectableApp || selectableDomain ? 'pointer' : 'default',
+        opacity: appDisabled ? 0.45 : 1,
+      }}
+      onClick={
+        selectableApp
+          ? () => onSelectApp?.(node.id)
+          : selectableDomain
+            ? () => onSelectDomain?.(node.id)
+            : undefined
+      }
     >
       <title>{tooltipParts.join(' · ')}</title>
       <circle
         r={NODE_R + 3}
         fill={theme.palette.background.paper}
         stroke={ring}
-        strokeWidth={appDisabled ? 2 : node.type === 'device' && node.fresh ? 1.75 : 1.25}
+        strokeWidth={
+          selected ? 2.25 : appDisabled ? 2 : node.type === 'device' && node.fresh ? 1.75 : 1.25
+        }
         strokeDasharray={appDisabled ? '3 2' : undefined}
       />
       <circle r={NODE_R} fill={style.bg} />
@@ -124,6 +169,11 @@ function MapNodeGlyph({
           {style.icon}
         </Box>
       </foreignObject>
+      {isInfra && (
+        <text y={NODE_R + 14} textAnchor="middle" fontSize={8} fontWeight={600} fill={theme.palette.text.secondary}>
+          {shortenLabel(node.label, 12)}
+        </text>
+      )}
     </g>
   );
 }
@@ -136,10 +186,23 @@ function edgeTooltip(
   const source = nodes.get(edge.source)?.label ?? edge.source;
   const target = nodes.get(edge.target)?.label ?? edge.target;
   if (simulatedCut) {
-    return `${source} → ${target} · cut by what-if (app disabled)`;
+    return `${source} → ${target} · cut by what-if`;
   }
   if (edge.kind === 'foreground') {
     return `${source} → ${target} (foreground app)`;
+  }
+  if (edge.kind === 'path_egress') {
+    return `${source} → ${target} · DNS leaves endpoint via VPN (${edge.query_count} quer${edge.query_count === 1 ? 'y' : 'ies'})`;
+  }
+  if (edge.kind === 'path_tunnel') {
+    return `${source} → ${target} · encrypted tunnel transit`;
+  }
+  if (edge.kind === 'path_resolve') {
+    return `${source} → ${target} · query received by dnsmasq`;
+  }
+  if (edge.kind === 'path_forward') {
+    const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
+    return `${source} → ${target} · policy decision · ${edge.query_count} quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked} · click for path detail`;
   }
   if (edge.kind === 'dns_direct') {
     const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
@@ -147,6 +210,52 @@ function edgeTooltip(
   }
   const blocked = edge.blocked_count > 0 ? ` · ${edge.blocked_count} blocked` : '';
   return `${source} → ${target} · ${edge.query_count} DNS quer${edge.query_count === 1 ? 'y' : 'ies'}${blocked}`;
+}
+
+function isEdgeSimulatedCut(
+  edge: NetworkMapEdge,
+  whatIf: WhatIfSimulationResult | null,
+  pathViewMode: boolean,
+): boolean {
+  if (!whatIf) {
+    return false;
+  }
+  if (pathViewMode) {
+    if (edge.kind === 'path_egress') {
+      return whatIf.disabledAppIds.has(edge.source);
+    }
+    if (edge.kind === 'path_forward') {
+      return whatIf.simulatedBlockedDomainIds.has(edge.target);
+    }
+    return false;
+  }
+  return whatIf.disabledEdgeKeys.has(edgeKey(edge));
+}
+
+function edgeStroke(
+  edge: NetworkMapEdge,
+  theme: ReturnType<typeof useTheme>,
+  simulatedCut: boolean,
+): string {
+  if (simulatedCut) {
+    return theme.palette.error.main;
+  }
+  if (edge.kind === 'foreground') {
+    return theme.palette.info.main;
+  }
+  if (edge.kind === 'path_tunnel' || edge.kind === 'path_resolve') {
+    return theme.palette.secondary.main;
+  }
+  if (edge.kind === 'path_egress') {
+    return theme.palette.primary.main;
+  }
+  if (edge.kind === 'path_forward') {
+    return edge.blocked_count > 0 ? theme.palette.error.main : theme.palette.success.main;
+  }
+  if (edge.kind === 'dns_direct') {
+    return theme.palette.text.disabled;
+  }
+  return edge.blocked_count > 0 ? theme.palette.error.main : theme.palette.success.main;
 }
 
 interface NetworkAttributionMapGraphProps {
@@ -161,14 +270,26 @@ export default function NetworkAttributionMapGraph({
   const theme = useTheme();
   const { data, loading, error, liveConnected } = useNetworkAttributionMap(minutes);
   const [whatIfMode, setWhatIfMode] = useState(false);
+  const [pathViewMode, setPathViewMode] = useState(false);
   const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
+  const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
 
-  const layout = useMemo(() => {
+  const graphData = useMemo(() => {
     if (!data) {
       return null;
     }
-    return layoutNetworkMap(data.nodes, data.edges);
-  }, [data]);
+    if (!pathViewMode) {
+      return { nodes: data.nodes, edges: data.edges };
+    }
+    return expandToPathView(data.nodes, data.edges);
+  }, [data, pathViewMode]);
+
+  const layout = useMemo(() => {
+    if (!graphData) {
+      return null;
+    }
+    return layoutNetworkMap(graphData.nodes, graphData.edges, pathViewMode ? 'path' : 'attribution');
+  }, [graphData, pathViewMode]);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, PositionedNode>();
@@ -182,6 +303,13 @@ export default function NetworkAttributionMapGraph({
     }
     return computeWhatIfSimulation(data.nodes, data.edges, disabledAppIds);
   }, [data, whatIfMode, disabledAppIds]);
+
+  const selectedFlows = useMemo((): PathFlowDetail[] => {
+    if (!data || !selectedDomainId) {
+      return [];
+    }
+    return buildPathFlowDetailsForDomain(selectedDomainId, data.nodes, data.edges);
+  }, [data, selectedDomainId]);
 
   const appNodes = useMemo(
     () => (data?.nodes.filter((n) => n.type === 'app') ?? []) as NetworkMapNode[],
@@ -207,12 +335,37 @@ export default function NetworkAttributionMapGraph({
     }
   };
 
+  const handlePathViewChange = (enabled: boolean) => {
+    setPathViewMode(enabled);
+    if (!enabled) {
+      setSelectedDomainId(null);
+    }
+  };
+
+  const handleEdgeClick = (edge: NetworkMapEdge) => {
+    if (!pathViewMode || !data) {
+      return;
+    }
+    if (edge.kind === 'path_forward') {
+      setSelectedDomainId(edge.target);
+      return;
+    }
+    if (edge.kind === 'dns' || edge.kind === 'dns_direct') {
+      setSelectedDomainId(edge.target);
+    }
+  };
+
+  const handleDomainSelect = (domainId: string) => {
+    setSelectedDomainId((prev) => (prev === domainId ? null : domainId));
+  };
+
   const deviceCount = data?.nodes.filter((n) => n.type === 'device').length ?? 0;
   const appCount = data?.nodes.filter((n) => n.type === 'app').length ?? 0;
   const domainCount = data?.nodes.filter((n) => n.type === 'domain').length ?? 0;
 
   const landFill = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.06);
   const laneStroke = alpha(theme.palette.divider, 0.55);
+  const columnLabels = pathColumnLabels(pathViewMode ? 'path' : 'attribution');
 
   return (
     <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
@@ -241,23 +394,48 @@ export default function NetworkAttributionMapGraph({
           <Chip size="small" variant="outlined" label={`${domainCount} destinations`} />
           {data && <Chip size="small" variant="outlined" label={`Last ${data.minutes} min`} />}
         </Stack>
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={whatIfMode}
-              onChange={(_, checked) => handleWhatIfModeChange(checked)}
-            />
-          }
-          label={
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <ScienceIcon sx={{ fontSize: 16 }} />
-              <Typography variant="body2">What-if</Typography>
-            </Stack>
-          }
-          sx={{ m: 0 }}
-        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={pathViewMode}
+                onChange={(_, checked) => handlePathViewChange(checked)}
+              />
+            }
+            label={
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <RouteIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2">Path view</Typography>
+              </Stack>
+            }
+            sx={{ m: 0 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={whatIfMode}
+                onChange={(_, checked) => handleWhatIfModeChange(checked)}
+              />
+            }
+            label={
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <ScienceIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2">What-if</Typography>
+              </Stack>
+            }
+            sx={{ m: 0 }}
+          />
+        </Stack>
       </Stack>
+
+      {pathViewMode && (
+        <Alert severity="info" sx={{ mb: 1.5 }} icon={<RouteIcon fontSize="small" />}>
+          Path view shows the logical DNS journey: endpoint → WireGuard → TrustEdge DNS → policy → destination.
+          Click a destination or green/red path arc for step-by-step detail.
+        </Alert>
+      )}
 
       {whatIfMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<ScienceIcon fontSize="small" />}>
@@ -290,7 +468,7 @@ export default function NetworkAttributionMapGraph({
         <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1.5 }}>
           {appNodes.map((app) => {
             const selected = disabledAppIds.has(app.id);
-            const icon = getAppIconStyle(app.app_slug);
+            const icon = getNodeIconStyle({ type: 'app', app_slug: app.app_slug });
             return (
               <Chip
                 key={app.id}
@@ -319,8 +497,10 @@ export default function NetworkAttributionMapGraph({
         sx={{
           position: 'relative',
           borderRadius: 1,
-          overflow: 'hidden',
-          border: `1px solid ${whatIfMode ? theme.palette.info.main : theme.palette.divider}`,
+          overflow: 'auto',
+          border: `1px solid ${
+            whatIfMode ? theme.palette.info.main : pathViewMode ? theme.palette.secondary.main : theme.palette.divider
+          }`,
           bgcolor: landFill,
           minHeight: 300,
           '& .network-flow-active': {
@@ -340,23 +520,35 @@ export default function NetworkAttributionMapGraph({
             component="svg"
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             preserveAspectRatio="xMidYMid meet"
-            sx={{ width: '100%', height: 'auto', display: 'block', minHeight: 300 }}
+            sx={{ width: '100%', minWidth: pathViewMode ? 640 : undefined, height: 'auto', display: 'block', minHeight: 300 }}
             role="img"
-            aria-label="Network map with devices, processes, and DNS destinations connected by arcs"
+            aria-label={
+              pathViewMode
+                ? 'Network map with DNS path through WireGuard, gateway, and policy'
+                : 'Network map with devices, processes, and DNS destinations connected by arcs'
+            }
           >
-            <line x1={COL_GUIDE.device} y1={28} x2={COL_GUIDE.device} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
-            <line x1={COL_GUIDE.app} y1={28} x2={COL_GUIDE.app} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
-            <line x1={COL_GUIDE.domain} y1={28} x2={COL_GUIDE.domain} y2={layout.height - 20} stroke={laneStroke} strokeDasharray="4 6" />
-
-            <text x={COL_GUIDE.device} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
-              Devices
-            </text>
-            <text x={COL_GUIDE.app} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
-              Processes
-            </text>
-            <text x={COL_GUIDE.domain} y={18} textAnchor="middle" fontSize={10} fontWeight={600} fill={theme.palette.text.secondary}>
-              Destinations
-            </text>
+            {columnLabels.map(({ key, label }) => {
+              const x = layout.columnGuides[key];
+              if (x == null) {
+                return null;
+              }
+              return (
+                <g key={key}>
+                  <line
+                    x1={x}
+                    y1={28}
+                    x2={x}
+                    y2={layout.height - 20}
+                    stroke={laneStroke}
+                    strokeDasharray="4 6"
+                  />
+                  <text x={x} y={18} textAnchor="middle" fontSize={9} fontWeight={600} fill={theme.palette.text.secondary}>
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
 
             {layout.edges.map((edge) => {
               const from = nodeMap.get(edge.source);
@@ -364,17 +556,16 @@ export default function NetworkAttributionMapGraph({
               if (!from || !to) {
                 return null;
               }
-              const simulatedCut = whatIf?.disabledEdgeKeys.has(edgeKey(edge)) ?? false;
-              const animated = !simulatedCut && (edge.kind === 'dns' || edge.kind === 'dns_direct');
-              const stroke = simulatedCut
-                ? theme.palette.error.main
-                : edge.kind === 'foreground'
-                  ? theme.palette.info.main
-                  : edge.kind === 'dns_direct'
-                    ? theme.palette.text.disabled
-                    : edge.blocked_count > 0
-                      ? theme.palette.error.main
-                      : theme.palette.success.main;
+              const simulatedCut = isEdgeSimulatedCut(edge, whatIf, pathViewMode);
+              const animated =
+                !simulatedCut &&
+                (edge.kind === 'dns' ||
+                  edge.kind === 'dns_direct' ||
+                  edge.kind === 'path_forward' ||
+                  edge.kind === 'path_egress');
+              const stroke = edgeStroke(edge, theme, simulatedCut);
+              const clickable =
+                pathViewMode && (edge.kind === 'path_forward' || edge.kind === 'dns' || edge.kind === 'dns_direct');
               return (
                 <path
                   key={`${edge.source}-${edge.target}-${edge.kind}`}
@@ -382,11 +573,15 @@ export default function NetworkAttributionMapGraph({
                   fill="none"
                   stroke={stroke}
                   strokeWidth={
-                    edge.kind === 'foreground'
+                    edge.kind === 'foreground' || edge.kind === 'path_tunnel' || edge.kind === 'path_resolve'
                       ? 1.25
                       : Math.min(3, 1 + Math.log2(edge.query_count + 1) * 0.6)
                   }
-                  strokeDasharray={simulatedCut || edge.kind === 'dns_direct' ? '5 4' : undefined}
+                  strokeDasharray={
+                    simulatedCut || edge.kind === 'dns_direct' || edge.kind === 'path_tunnel'
+                      ? '5 4'
+                      : undefined
+                  }
                   opacity={
                     simulatedCut
                       ? 0.55
@@ -394,10 +589,14 @@ export default function NetworkAttributionMapGraph({
                         ? 0.5
                         : edge.kind === 'dns_direct'
                           ? 0.45
-                          : 0.8
+                          : edge.kind === 'path_tunnel' || edge.kind === 'path_resolve'
+                            ? 0.65
+                            : 0.8
                   }
                   strokeLinecap="round"
                   className={animated ? 'network-flow-active' : undefined}
+                  style={{ cursor: clickable ? 'pointer' : undefined }}
+                  onClick={clickable ? () => handleEdgeClick(edge) : undefined}
                 >
                   <title>{edgeTooltip(edge, nodeMap, simulatedCut)}</title>
                 </path>
@@ -409,9 +608,12 @@ export default function NetworkAttributionMapGraph({
                 key={node.id}
                 node={node}
                 whatIfMode={whatIfMode}
+                pathViewMode={pathViewMode}
                 appDisabled={whatIfMode && disabledAppIds.has(node.id)}
                 simulatedBlocked={whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false}
+                selected={selectedDomainId === node.id}
                 onSelectApp={handleToggleApp}
+                onSelectDomain={handleDomainSelect}
               />
             ))}
           </Box>
@@ -427,24 +629,38 @@ export default function NetworkAttributionMapGraph({
         )}
       </Box>
 
+      {selectedFlows.length > 0 && (
+        <PathFlowDetailPanel flows={selectedFlows} onClose={() => setSelectedDomainId(null)} />
+      )}
+
       {layout && layout.nodes.length > 0 && (
         <>
           <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mt: 1.5 }}>
             <Chip size="small" variant="outlined" label="Teal pin = device" />
             <Chip size="small" variant="outlined" label="Center = process" />
-            <Chip size="small" variant="outlined" label="Right = DNS destination" />
+            {pathViewMode ? (
+              <>
+                <Chip size="small" variant="outlined" label="Purple = WireGuard" />
+                <Chip size="small" variant="outlined" label="Blue = TrustEdge DNS" />
+                <Chip size="small" variant="outlined" label="Amber = policy gate" />
+              </>
+            ) : (
+              <Chip size="small" variant="outlined" label="Right = DNS destination" />
+            )}
             <Chip
               size="small"
               variant="outlined"
               label="Animated arc = live DNS"
               sx={{ borderColor: 'success.main', color: 'success.main' }}
             />
-            <Chip
-              size="small"
-              variant="outlined"
-              label="Dashed = no app yet"
-              sx={{ borderColor: 'text.disabled', color: 'text.secondary' }}
-            />
+            {!pathViewMode && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label="Dashed = no app yet"
+                sx={{ borderColor: 'text.disabled', color: 'text.secondary' }}
+              />
+            )}
             {whatIfMode && (
               <Chip
                 size="small"
@@ -463,56 +679,72 @@ export default function NetworkAttributionMapGraph({
               gap: 1,
             }}
           >
-            {layout.nodes.slice(0, 12).map((node) => {
-              const style =
-                node.type === 'device'
-                  ? getDeviceIconStyle()
-                  : node.type === 'app'
-                    ? getAppIconStyle(node.app_slug)
-                    : getDomainIconStyle(
-                        node.blocked || (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false),
-                      );
-              const appDisabled = whatIfMode && disabledAppIds.has(node.id);
-              return (
-                <Stack
-                  key={node.id}
-                  direction="row"
-                  spacing={0.75}
-                  alignItems="center"
-                  onClick={whatIfMode && node.type === 'app' ? () => handleToggleApp(node.id) : undefined}
-                  sx={{
-                    px: 1,
-                    py: 0.5,
-                    borderRadius: 1,
-                    bgcolor: alpha(theme.palette.background.paper, 0.6),
-                    border: `1px solid ${appDisabled ? theme.palette.error.main : theme.palette.divider}`,
-                    minWidth: 0,
-                    opacity: appDisabled ? 0.55 : 1,
-                    cursor: whatIfMode && node.type === 'app' ? 'pointer' : 'default',
-                  }}
-                >
-                  <Box
+            {layout.nodes
+              .filter((node) => node.type !== 'tunnel' && node.type !== 'gateway' && node.type !== 'policy')
+              .slice(0, 12)
+              .map((node) => {
+                const style = getNodeIconStyle({
+                  type: node.type,
+                  app_slug: node.app_slug,
+                  blocked: node.blocked || (whatIf?.simulatedBlockedDomainIds.has(node.id) ?? false),
+                });
+                const appDisabled = whatIfMode && disabledAppIds.has(node.id);
+                const domainSelected = pathViewMode && selectedDomainId === node.id;
+                return (
+                  <Stack
+                    key={node.id}
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="center"
+                    onClick={
+                      whatIfMode && node.type === 'app'
+                        ? () => handleToggleApp(node.id)
+                        : pathViewMode && node.type === 'domain'
+                          ? () => handleDomainSelect(node.id)
+                          : undefined
+                    }
                     sx={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      bgcolor: style.bg,
-                      color: style.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      '& svg': { fontSize: 13 },
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 1,
+                      bgcolor: alpha(theme.palette.background.paper, 0.6),
+                      border: `1px solid ${
+                        appDisabled
+                          ? theme.palette.error.main
+                          : domainSelected
+                            ? theme.palette.info.main
+                            : theme.palette.divider
+                      }`,
+                      minWidth: 0,
+                      opacity: appDisabled ? 0.55 : 1,
+                      cursor:
+                        (whatIfMode && node.type === 'app') || (pathViewMode && node.type === 'domain')
+                          ? 'pointer'
+                          : 'default',
                     }}
                   >
-                    {style.icon}
-                  </Box>
-                  <Typography variant="caption" noWrap title={node.label} sx={{ minWidth: 0 }}>
-                    {shortenLabel(node.label)}
-                  </Typography>
-                </Stack>
-              );
-            })}
+                    <Box
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        bgcolor: style.bg,
+                        color: style.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        '& svg': { fontSize: 13 },
+                      }}
+                    >
+                      {style.icon}
+                    </Box>
+                    <Typography variant="caption" noWrap title={node.label} sx={{ minWidth: 0 }}>
+                      {shortenLabel(node.label)}
+                    </Typography>
+                  </Stack>
+                );
+              })}
           </Box>
           {layout.nodes.length > 12 && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
@@ -524,9 +756,3 @@ export default function NetworkAttributionMapGraph({
     </Paper>
   );
 }
-
-const COL_GUIDE = {
-  device: 130,
-  app: 380,
-  domain: 640,
-};

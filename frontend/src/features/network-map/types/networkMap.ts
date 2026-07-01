@@ -1,4 +1,15 @@
-export type NetworkMapNodeType = 'device' | 'app' | 'domain';
+export type NetworkMapNodeType = 'device' | 'app' | 'domain' | 'tunnel' | 'gateway' | 'policy';
+
+export type NetworkMapEdgeKind =
+  | 'foreground'
+  | 'dns'
+  | 'dns_direct'
+  | 'path_egress'
+  | 'path_tunnel'
+  | 'path_resolve'
+  | 'path_forward';
+
+export type NetworkMapLayoutMode = 'attribution' | 'path';
 
 export interface NetworkMapNode {
   id: string;
@@ -14,7 +25,7 @@ export interface NetworkMapNode {
 export interface NetworkMapEdge {
   source: string;
   target: string;
-  kind: 'foreground' | 'dns' | 'dns_direct';
+  kind: NetworkMapEdgeKind;
   query_count: number;
   blocked_count: number;
 }
