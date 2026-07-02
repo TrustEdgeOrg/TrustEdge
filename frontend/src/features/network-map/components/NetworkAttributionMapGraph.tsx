@@ -15,15 +15,18 @@ import ScienceIcon from '@mui/icons-material/Science';
 import BlockIcon from '@mui/icons-material/Block';
 import RouteIcon from '@mui/icons-material/Route';
 import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import { useTwinGraph } from '../../twin-graph/hooks/useTwinGraph';
 import { projectTwinGraph } from '../../twin-graph/projections/projectGraph';
 import { DEFAULT_NETWORK_MAP_MINUTES } from '../config/api';
 import {
   edgePath,
   layoutNetworkMap,
+  NetworkMapLayoutStyle,
   pathColumnLabels,
   shortenLabel,
 } from '../utils/layoutNetworkMap';
+import { layoutForceDirected } from '../utils/layoutForceDirected';
 import { flowNodeTooltip, parseFlowNode, portNodeTooltip } from '../utils/flowLabels';
 import {
   computePortWhatIfSimulation,
@@ -352,6 +355,7 @@ export default function NetworkAttributionMapGraph({
   );
   const [whatIfMode, setWhatIfMode] = useState(false);
   const [pathViewMode, setPathViewMode] = useState(false);
+  const [graphLayout, setGraphLayout] = useState<NetworkMapLayoutStyle>('columns');
   const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
   const [disabledPortNumbers, setDisabledPortNumbers] = useState<Set<number>>(new Set());
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
@@ -372,8 +376,11 @@ export default function NetworkAttributionMapGraph({
     if (!graphData) {
       return null;
     }
+    if (graphLayout === 'force') {
+      return layoutForceDirected(graphData.nodes, graphData.edges, layoutMode);
+    }
     return layoutNetworkMap(graphData.nodes, graphData.edges, layoutMode);
-  }, [graphData, layoutMode]);
+  }, [graphData, layoutMode, graphLayout]);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, PositionedNode>();
@@ -495,6 +502,7 @@ export default function NetworkAttributionMapGraph({
   const landFill = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.06);
   const laneStroke = alpha(theme.palette.divider, 0.55);
   const columnLabels = pathColumnLabels(layoutMode);
+  const showColumnGuides = graphLayout === 'columns';
 
   return (
     <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
@@ -527,6 +535,22 @@ export default function NetworkAttributionMapGraph({
           )}
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={graphLayout === 'force'}
+                onChange={(_, checked) => setGraphLayout(checked ? 'force' : 'columns')}
+              />
+            }
+            label={
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <ScatterPlotIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2">Graph layout</Typography>
+              </Stack>
+            }
+            sx={{ m: 0 }}
+          />
           <FormControlLabel
             control={
               <Switch
@@ -577,6 +601,12 @@ export default function NetworkAttributionMapGraph({
           />
         </Stack>
       </Stack>
+
+      {graphLayout === 'force' && (
+        <Alert severity="info" sx={{ mb: 1.5 }} icon={<ScatterPlotIcon fontSize="small" />}>
+          Graph layout places nodes by connectivity (spring force). Turn off to return to column view.
+        </Alert>
+      )}
 
       {flowViewMode && (
         <Alert severity="info" sx={{ mb: 1.5 }} icon={<SettingsEthernetIcon fontSize="small" />}>
@@ -727,17 +757,20 @@ export default function NetworkAttributionMapGraph({
             component="svg"
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             preserveAspectRatio="xMidYMid meet"
-            sx={{ width: '100%', minWidth: flowViewMode || pathViewMode ? 640 : undefined, height: 'auto', display: 'block', minHeight: 300 }}
+            sx={{ width: '100%', minWidth: showColumnGuides && (flowViewMode || pathViewMode) ? 640 : undefined, height: 'auto', display: 'block', minHeight: 300 }}
             role="img"
             aria-label={
-              flowViewMode
+              graphLayout === 'force'
+                ? 'Force-directed network graph'
+                : flowViewMode
                 ? 'Network map with DNS names and live TCP/UDP connections'
                 : pathViewMode
                   ? 'Network map with DNS path through WireGuard, gateway, and policy'
                   : 'Network map with devices, processes, and DNS destinations connected by arcs'
             }
           >
-            {columnLabels.map(({ key, label }) => {
+            {showColumnGuides &&
+              columnLabels.map(({ key, label }) => {
               const x = layout.columnGuides[key];
               if (x == null) {
                 return null;
