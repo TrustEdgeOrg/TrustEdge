@@ -85,6 +85,10 @@ See [host-agent/README.md](../host-agent/README.md) for the block → DNS sync f
 
 ## Domain concepts
 
+### Digital twin graph
+
+- **Twin graph engine** — Canonical entity/dependency model for impact analysis, blast radius, RCA, and policy simulation. See [GRAPH_ENGINE.md](GRAPH_ENGINE.md).
+
 ### Policy
 
 - **Policy pack** — A reusable bundle of DNS block rules (e.g. adult content, gambling).

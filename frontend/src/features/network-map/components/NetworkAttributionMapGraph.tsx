@@ -15,7 +15,8 @@ import ScienceIcon from '@mui/icons-material/Science';
 import BlockIcon from '@mui/icons-material/Block';
 import RouteIcon from '@mui/icons-material/Route';
 import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
-import { useNetworkAttributionMap } from '../hooks/useNetworkAttributionMap';
+import { useTwinGraph } from '../../twin-graph/hooks/useTwinGraph';
+import { projectTwinGraph } from '../../twin-graph/projections/projectGraph';
 import { DEFAULT_NETWORK_MAP_MINUTES } from '../config/api';
 import {
   edgePath,
@@ -24,7 +25,6 @@ import {
   shortenLabel,
 } from '../utils/layoutNetworkMap';
 import { flowNodeTooltip, parseFlowNode, portNodeTooltip } from '../utils/flowLabels';
-import { expandFlowToPortView } from '../utils/expandFlowToPortView';
 import {
   computePortWhatIfSimulation,
   listActivePortNumbers,
@@ -39,7 +39,6 @@ import {
   toggleDisabledApp,
   WhatIfSimulationResult,
 } from '../utils/whatIfSimulation';
-import { expandToPathView } from '../utils/expandPathView';
 import {
   buildPathFlowDetailsForDomain,
   PathFlowDetail,
@@ -346,7 +345,11 @@ export default function NetworkAttributionMapGraph({
 }: NetworkAttributionMapGraphProps) {
   const theme = useTheme();
   const [flowViewMode, setFlowViewMode] = useState(false);
-  const { data, loading, error, liveConnected } = useNetworkAttributionMap(minutes, undefined, flowViewMode);
+  const { snapshot, attribution, loading, error, liveConnected } = useTwinGraph(
+    minutes,
+    undefined,
+    flowViewMode,
+  );
   const [whatIfMode, setWhatIfMode] = useState(false);
   const [pathViewMode, setPathViewMode] = useState(false);
   const [disabledAppIds, setDisabledAppIds] = useState<Set<string>>(new Set());
@@ -356,17 +359,14 @@ export default function NetworkAttributionMapGraph({
   const layoutMode = pathViewMode ? 'path' : flowViewMode ? 'flow' : 'attribution';
 
   const graphData = useMemo(() => {
-    if (!data) {
+    if (!snapshot) {
       return null;
     }
-    if (pathViewMode) {
-      return expandToPathView(data.nodes, data.edges);
-    }
-    if (flowViewMode) {
-      return expandFlowToPortView(data.nodes, data.edges);
-    }
-    return { nodes: data.nodes, edges: data.edges };
-  }, [data, pathViewMode, flowViewMode]);
+    const mode = pathViewMode ? 'path' : flowViewMode ? 'flow' : 'attribution';
+    return projectTwinGraph(snapshot, mode, attribution);
+  }, [snapshot, attribution, pathViewMode, flowViewMode]);
+
+  const data = attribution;
 
   const layout = useMemo(() => {
     if (!graphData) {
