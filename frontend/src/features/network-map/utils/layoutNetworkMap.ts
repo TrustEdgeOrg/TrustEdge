@@ -30,12 +30,15 @@ export const PATH_LAYOUT_WIDTH = 640;
 export const ATTRIBUTION_LAYOUT_WIDTH = 720;
 export const FLOW_LAYOUT_WIDTH = 580;
 
+export type NetworkMapLayoutStyle = 'columns' | 'force';
+
 export interface NetworkMapLayout {
   nodes: PositionedNode[];
   edges: NetworkMapEdge[];
   width: number;
   height: number;
   mode: NetworkMapLayoutMode;
+  layoutStyle: NetworkMapLayoutStyle;
   columnGuides: Record<string, number>;
 }
 
@@ -249,6 +252,7 @@ export function layoutNetworkMap(
     width,
     height,
     mode,
+    layoutStyle: 'columns',
     columnGuides: columns as Record<string, number>,
   };
 }
