@@ -17,6 +17,9 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>` when the token
 | `GET` | `/policy/dns-sync` | Effective DNS block rules for dnsmasq |
 | `POST` | `/policy/apply` | Queue policy sync to dnsmasq |
 | **Digital Twin** | | |
+| `GET` | `/twin/graph/snapshot` | Canonical entity/dependency graph (`minutes`, `include_flows`, `include_policy`) |
+| `POST` | `/twin/graph/traverse` | Walk dependencies from seed nodes (impact, blast radius, RCA) |
+| `GET` | `/twin/graph/neighbors` | One-hop neighbors of a node (`node_id`, `direction`, optional `relations`, `layers`) |
 | `POST` | `/twin/simulate/pack-toggle` | Preview global pack toggle impact (read-only) |
 | **Devices** | | |
 | `GET` | `/devices` | List devices |

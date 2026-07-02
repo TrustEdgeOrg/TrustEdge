@@ -29,9 +29,24 @@ export function parseFlowNode(
     };
   }
 
-  const idMatch = node.id.match(/^flow:([a-z]+):([^:]+):(\d+)$/i);
+  const idMatch =
+    node.id.match(/^flow:([a-z]+):([^:]+):(\d+):(.+)$/i) ??
+    node.id.match(/^flow:([a-z]+):([^:]+):(\d+)$/i);
   if (!idMatch) {
     return null;
+  }
+  if (idMatch.length === 5) {
+    const [, protocol, destination, portText] = idMatch;
+    const port = Number(portText);
+    if (!Number.isFinite(port)) {
+      return null;
+    }
+    return {
+      protocol: protocol.toLowerCase(),
+      port,
+      destination,
+      destinationKind: /^\d+\.\d+\.\d+\.\d+$/.test(destination) ? 'ip' : 'domain',
+    };
   }
   const [, protocol, destination, portText] = idMatch;
   const port = Number(portText);

@@ -9,6 +9,7 @@ Engineering documentation for the [TrustEdge platform](https://github.com/TrustE
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [DESIGN.md](DESIGN.md) | Engineers | Domain model, system topology, frontend/backend patterns, extension guide |
+| [GRAPH_ENGINE.md](GRAPH_ENGINE.md) | Engineers | Digital twin graph data model, traversal API, visualization projections |
 | [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | Engineers, reviewers | Architecture diagram, data flows, trust boundaries |
 | [DEPLOY.md](DEPLOY.md) | Operators | AWS layout, CI/CD, EC2 host services |
 | [ENV_SETUP.md](ENV_SETUP.md) | Operators | Environment variables, tokens, troubleshooting |
