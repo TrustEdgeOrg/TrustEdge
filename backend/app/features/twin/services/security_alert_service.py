@@ -11,8 +11,6 @@ from app.features.twin.schemas.security_alert import (
     SecurityAlertListResponse,
     SecurityAlertResponse,
 )
-from app.features.twin.services.detection_engine_client import fetch_security_alerts
-from app.shared.config import settings
 from app.shared.logging_context import structured_extra
 from app.shared.utils.logging import get_logger
 
@@ -61,17 +59,15 @@ class SecurityAlertService:
         self.repo = SecurityAlertRepository(db)
 
     def ingest(self, alerts: list[SecurityAlertCreate]) -> int:
-        if settings.DETECTION_ENGINE_URL.strip():
-            # Alerts are kept in the detection-engine process; do not persist to Postgres.
-            return 0
+        """Persist alerts to Postgres (durable history, all severities).
 
+        Detection-engine may still keep a hot in-memory window; ingest is
+        write-through so restarts do not lose alert history.
+        """
         created = 0
         skipped = 0
         seen_in_batch: set[str] = set()
         for item in alerts:
-            if (item.severity or "").strip().lower() != "high":
-                skipped += 1
-                continue
             fingerprint = _fingerprint(item)
             if fingerprint in seen_in_batch or self.repo.exists_fingerprint(fingerprint):
                 skipped += 1
@@ -114,15 +110,7 @@ class SecurityAlertService:
         device_id: Optional[str] = None,
         severity: Optional[str] = None,
     ) -> SecurityAlertListResponse:
-        if settings.DETECTION_ENGINE_URL.strip():
-            return fetch_security_alerts(
-                page=page,
-                page_size=page_size,
-                alert_type=alert_type,
-                device_id=device_id,
-                severity=severity,
-            )
-
+        """List alerts from Postgres (durable source of truth)."""
         items, total = self.repo.get_recent(
             page=page,
             page_size=page_size,

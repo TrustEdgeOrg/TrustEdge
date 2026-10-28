@@ -276,6 +276,126 @@ def test_file_open_secret_emits_ai_secrets_access_alert():
     assert any(".env" in str(s) for s in detail.get("secrets", []))
 
 
+def test_cursor_env_then_git_push_emits_ai_secrets_git_push():
+    """Cursor opens .env then runs git push → dedicated high alert."""
+    pipe = Pipeline()
+    device = "dev_env_push"
+    pipe.process_event(
+        _process_start(device, 80, 1, "Cursor", event_id="gp0", ts="2026-08-06T12:00:00Z")
+    )
+    pipe.process_event(
+        _event(
+            device,
+            "file_open",
+            {
+                "pid": 80,
+                "ppid": 1,
+                "comm": "Cursor",
+                "executable": "/Applications/Cursor.app/Contents/MacOS/Cursor",
+                "path": "/tmp/trustedge-git-test/.env",
+                "operation": "open",
+            },
+            event_id="gp1",
+            ts="2026-08-06T12:00:01Z",
+        )
+    )
+    alert = pipe.process_event(
+        _process_start(
+            device,
+            81,
+            80,
+            "git",
+            cmdline="git add .env && git push origin main",
+            event_id="gp2",
+            ts="2026-08-06T12:00:02Z",
+        )
+    )
+    assert alert is not None
+    assert alert.alert_type == "ai_secrets_git_push"
+    assert alert.severity == "high"
+    detail = json.loads(alert.detail or "{}")
+    assert any(".env" in str(s) for s in detail.get("secrets", []))
+    assert "git push" in (detail.get("git_cmdline") or "")
+    assert detail.get("parent_comm")
+    assert detail.get("child_comm") == "git"
+    assert detail.get("parent_pid") == 80
+    assert detail.get("child_pid") == 81
+    assert detail.get("cursor_pid") == 80
+    assert detail.get("git_pid") == 81
+    path = detail.get("execution_path") or []
+    assert any("open" in str(p) and ".env" in str(p) for p in path)
+    assert any("git push" in str(p) for p in path)
+    assert "accessed" in (alert.message or "")
+    assert ".env" in (alert.message or "")
+    assert "git push" in (alert.message or "")
+    assert "pid 80" not in (alert.message or "")  # PIDs live in the chain, not the title
+
+
+def test_git_push_with_env_in_cmdline_without_prior_open():
+    """git add .env && git push under Cursor still alerts without file_open."""
+    pipe = Pipeline()
+    device = "dev_env_push_cmd"
+    pipe.process_event(
+        _process_start(device, 90, 1, "Cursor", event_id="gc0", ts="2026-08-06T12:00:00Z")
+    )
+    alert = pipe.process_event(
+        _process_start(
+            device,
+            91,
+            90,
+            "git",
+            cmdline="git add .env && git push -u origin main",
+            event_id="gc1",
+            ts="2026-08-06T12:00:01Z",
+        )
+    )
+    assert alert is not None
+    assert alert.alert_type == "ai_secrets_git_push"
+    detail = json.loads(alert.detail or "{}")
+    assert any(".env" in str(s) for s in detail.get("secrets", []))
+
+
+def test_git_dash_c_push_after_env_open_alerts():
+    """Real `git -C <repo> push` cmdline must still correlate to secrets push."""
+    pipe = Pipeline()
+    device = "dev_env_push_dash_c"
+    pipe.process_event(
+        _process_start(device, 70, 1, "Cursor", event_id="gdc0", ts="2026-08-06T12:00:00Z")
+    )
+    pipe.process_event(
+        _event(
+            device,
+            "file_open",
+            {
+                "pid": 70,
+                "ppid": 1,
+                "comm": "Cursor",
+                "executable": "/Applications/Cursor.app/Contents/MacOS/Cursor",
+                "path": "/tmp/trustedge-git-test/.env",
+                "operation": "open",
+            },
+            event_id="gdc1",
+            ts="2026-08-06T12:00:01Z",
+        )
+    )
+    alert = pipe.process_event(
+        _process_start(
+            device,
+            71,
+            70,
+            "git",
+            cmdline="git -C /tmp/trustedge-git-test push origin HEAD:main",
+            event_id="gdc2",
+            ts="2026-08-06T12:00:02Z",
+        )
+    )
+    assert alert is not None
+    assert alert.alert_type == "ai_secrets_git_push"
+    detail = json.loads(alert.detail or "{}")
+    assert detail.get("git_pid") == 71
+    assert detail.get("cursor_pid") == 70
+
+
 def test_file_open_bootstraps_cursor_helper_session():
     """Secret open from Cursor Helper without prior process_start still alerts."""
     pipe = Pipeline()

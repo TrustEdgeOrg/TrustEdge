@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
+import json
+
 from ai_activity import correlation_engine
 from ai_activity import filesystem_tracker
+from ai_activity import governance
 from ai_activity import network_tracker
 from ai_activity import process_tracker
 from ai_activity import risk_engine
 from ai_activity import terminal_tracker
 from ai_activity import tool_tracker
+from ai_activity.catalog import ENGINE_AI_ACTIVITY
 from ai_activity.detector import classify_process
 from ai_activity.session_manager import SessionManager
 from rules.chain import payload_int, payload_str, ts_iso, parse_ts
@@ -29,8 +33,13 @@ from rules.state import StateStore
 class AiActivityEngine:
     """Consumes every pipeline event; reconstructs AI sessions; emits EngineHits."""
 
-    def __init__(self, sessions: SessionManager | None = None) -> None:
+    def __init__(
+        self,
+        sessions: SessionManager | None = None,
+        gov_store: governance.GovernanceStore | None = None,
+    ) -> None:
         self.sessions = sessions or SessionManager()
+        self.gov_store = gov_store or governance.GovernanceStore()
 
     def on_event(self, event: dict[str, Any], store: StateStore) -> list:
         device_id = str(event.get("device_id") or "").strip()
@@ -43,6 +52,11 @@ class AiActivityEngine:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
 
         with self.sessions.lock():
+            if event_type == governance.TYPE_AI_AGENT_ACTION:
+                governance.handle_ai_agent_action(event, self.gov_store)
+                return self._on_agent_action_runtime(
+                    event, device_id, event_id, timestamp, payload
+                )
             if event_type == TYPE_PROCESS_START:
                 return self._on_process_start(
                     event, store, device_id, event_id, event_type, timestamp, payload
@@ -66,7 +80,6 @@ class AiActivityEngine:
                     payload,
                     default_operation="write" if event_type == TYPE_FILE_WRITE else "open",
                 )
-            # Other event types: try attach via pid if in an AI tree (no-op otherwise)
             return []
 
     # ------------------------------------------------------------------
@@ -270,7 +283,7 @@ class AiActivityEngine:
         network_tracker.record_network(
             session, process_id=process_id, payload=payload, timestamp=timestamp
         )
-        return self._correlate_and_hits(
+        hits = self._correlate_and_hits(
             session,
             trigger="network",
             timestamp=timestamp,
@@ -278,6 +291,66 @@ class AiActivityEngine:
             event_type=event_type,
             device_id=device_id,
         )
+        dest = (
+            payload_str(payload.get("domain"))
+            or payload_str(payload.get("remote_hostname"))
+            or payload_str(payload.get("remote_ip"))
+            or payload_str(payload.get("remote_addr"))
+        )
+        proc_name = (
+            (proc.process_name if proc else "")
+            or payload_str(payload.get("comm"))
+            or ""
+        )
+        alert = governance.correlate_ungoverned_egress(
+            device_id=device_id,
+            agent_type=session.app_name or "unknown",
+            destination=dest,
+            process_name=proc_name,
+            evidence=[f"session:{session.app_name}", f"ancestry_pid:{pid}"],
+            confidence="HIGH",
+            timestamp=timestamp,
+            event_id=event_id,
+            store=self.gov_store,
+            governed=False,
+        )
+        if alert is not None:
+            hits = list(hits) + [_alert_to_hit(alert)]
+        return hits
+
+    def _on_agent_action_runtime(
+        self,
+        event: dict[str, Any],
+        device_id: str,
+        event_id: str | None,
+        timestamp: str,
+        payload: dict[str, Any],
+    ) -> list:
+        channel = payload_str(payload.get("channel")).upper()
+        if channel not in ("NETWORK", "PROCESS"):
+            return []
+        governed = payload.get("governed") is True
+        dest = payload_str(payload.get("destination"))
+        agent_type = payload_str(payload.get("agent_type")) or "unknown"
+        process_name = payload_str(payload.get("process"))
+        evidence = payload.get("evidence") if isinstance(payload.get("evidence"), list) else []
+        evidence_s = [str(x) for x in evidence]
+        confidence = payload_str(payload.get("confidence")) or "MEDIUM"
+        alert = governance.correlate_ungoverned_egress(
+            device_id=device_id,
+            agent_type=agent_type,
+            destination=dest,
+            process_name=process_name,
+            evidence=evidence_s,
+            confidence=confidence,
+            timestamp=timestamp,
+            event_id=event_id,
+            store=self.gov_store,
+            governed=governed,
+        )
+        if alert is None:
+            return []
+        return [_alert_to_hit(alert)]
 
     def _on_file_event(
         self,
@@ -418,6 +491,26 @@ class AiActivityEngine:
             event_type=event_type,
             device_id=device_id,
         )
+
+
+def _alert_to_hit(alert) -> Any:
+    from pipeline.types import EngineHit
+
+    detail = alert.detail if isinstance(alert.detail, str) else json.dumps(
+        alert.detail or {}, separators=(",", ":")
+    )
+    return EngineHit(
+        engine=ENGINE_AI_ACTIVITY,
+        alert_type=alert.alert_type,
+        severity=alert.severity,
+        score=alert.score,
+        message=alert.message,
+        device_id=alert.device_id,
+        timestamp=alert.timestamp,
+        event_id=alert.event_id or None,
+        event_type=alert.event_type,
+        detail=detail,
+    )
 
 
 def _ancestor_pids(store: StateStore, device_id: str, start_ppid: int, *, limit: int = 8) -> list[int]:

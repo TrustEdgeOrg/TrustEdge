@@ -15,11 +15,14 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Collapse from '@mui/material/Collapse';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import CodeIcon from '@mui/icons-material/Code';
 import { useMemo, useState, type MouseEvent } from 'react';
 import { twinApi } from '../features/twin/config/api';
 import { useSecurityAlerts } from '../features/twin/hooks/useSecurityAlerts';
@@ -40,9 +43,12 @@ const TYPE_LABEL: Record<string, string> = {
   ai_terminal_tool_chain: 'AI terminal tool chain',
   ai_shell_network_exfil: 'AI shell network activity',
   ai_secrets_access: 'AI secrets access',
+  ai_secrets_git_push: 'AI secrets git push',
   ai_cloud_cli_from_agent: 'AI cloud CLI',
   ai_container_build_deploy: 'AI container deploy',
   ai_multi_tool_burst: 'AI multi-tool burst',
+  ai_sensitive_mcp_ungoverned_egress: 'Sensitive MCP then ungoverned egress',
+  ai_novel_cursor_tool: 'Novel Cursor tool',
   script_spawns_shell: 'Script spawned shell',
   binary_path_mismatch: 'Binary path mismatch',
   novel_process: 'Novel process',
@@ -70,9 +76,12 @@ const AI_ALERT_TYPES = new Set([
   'ai_terminal_tool_chain',
   'ai_shell_network_exfil',
   'ai_secrets_access',
+  'ai_secrets_git_push',
   'ai_cloud_cli_from_agent',
   'ai_container_build_deploy',
   'ai_multi_tool_burst',
+  'ai_sensitive_mcp_ungoverned_egress',
+  'ai_novel_cursor_tool',
 ]);
 
 type CategoryFilter = 'all' | 'ai' | 'process' | 'network';
@@ -103,18 +112,11 @@ function isAiAlert(alertType: string): boolean {
   return AI_ALERT_TYPES.has(alertType) || alertType.startsWith('ai_');
 }
 
-function sessionIdFromAlertDetail(detail: string | null | undefined): string | null {
-  if (!detail) return null;
-  try {
-    const parsed = JSON.parse(detail) as { session_id?: string };
-    const sid = (parsed.session_id || '').trim();
-    return sid || null;
-  } catch {
-    return null;
-  }
-}
-
 const DETAIL_LABELS: Record<string, string> = {
+  git_cmdline: 'Git command',
+  secrets: 'Secrets',
+  cursor_pid: 'Cursor PID',
+  git_pid: 'Git PID',
   parent_comm: 'Parent',
   child_comm: 'Child',
   parent_pid: 'Parent PID',
@@ -155,6 +157,12 @@ const DETAIL_LABELS: Record<string, string> = {
   value_name: 'Value name',
   value: 'Value',
   version: 'Version',
+  finding_type: 'Finding',
+  governed_mcp: 'Governed MCP',
+  ungoverned_runtime: 'Ungoverned runtime',
+  claim: 'Claim',
+  not_claimed: 'Not claimed',
+  engine: 'Engine',
 };
 
 type AlertDetail = Record<string, unknown>;
@@ -175,6 +183,13 @@ function parseDetail(raw?: string | null): AlertDetail | null {
 function formatDetailValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(String).join(', ');
   if (value == null) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
   return String(value);
 }
 
@@ -207,40 +222,277 @@ function CmdlineBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProcessChainView({ detail }: { detail: AlertDetail }) {
-  const parent = detail.parent_comm != null ? String(detail.parent_comm) : null;
-  const child = detail.child_comm != null ? String(detail.child_comm) : null;
-  const parentCmd = detail.parent_cmdline != null ? String(detail.parent_cmdline).trim() : '';
-  const childCmd = detail.child_cmdline != null ? String(detail.child_cmdline).trim() : '';
-  const singleCmd = detail.cmdline != null ? String(detail.cmdline).trim() : '';
-  if (!parent && !child && !singleCmd) return null;
+function uniqueSecretPaths(paths: string[]): string[] {
+  const ordered = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  const full = ordered.filter((p) => p.includes('/') || p.startsWith('~'));
+  const bare = ordered.filter((p) => !full.includes(p));
+  const out = [...full];
+  for (const b of bare) {
+    const covered = out.some((f) => f === b || f.endsWith(`/${b}`) || f.endsWith(b));
+    if (!covered) out.push(b);
+  }
+  return out;
+}
+
+function secretsFromDetail(detail: AlertDetail | null): string[] {
+  if (!detail) return [];
+  return uniqueSecretPaths(
+    Array.isArray(detail.secrets)
+      ? detail.secrets.map((s) => String(s))
+      : detail.secret_path != null
+        ? [String(detail.secret_path)]
+        : [],
+  );
+}
+
+function friendlyAlertTitle(alert: SecurityAlert, detail: AlertDetail | null, fallbackLabel: string): string {
+  if (alert.alert_type === 'ai_secrets_git_push') {
+    const app = String(detail?.parent_comm || detail?.app_name || 'An AI app');
+    const secret = secretsFromDetail(detail)[0] || 'a secret file';
+    return `${app} accessed ${secret} and tried to push it with git`;
+  }
+  if (alert.alert_type === 'ai_sensitive_mcp_ungoverned_egress') {
+    const mcp = detail?.governed_mcp as Record<string, unknown> | undefined;
+    const runtime = detail?.ungoverned_runtime as Record<string, unknown> | undefined;
+    const tool = mcp?.tool != null ? String(mcp.tool) : 'an MCP tool';
+    const server = mcp?.server != null ? String(mcp.server) : 'MCP';
+    const dest = runtime?.destination != null ? String(runtime.destination) : 'an external host';
+    return `Sensitive ${server}/${tool} followed by ungoverned egress to ${dest}`;
+  }
+  return alert.message || fallbackLabel;
+}
+
+function FriendlyAlertSummary({
+  alert,
+  detail,
+}: {
+  alert: SecurityAlert;
+  detail: AlertDetail | null;
+}) {
+  const secrets = secretsFromDetail(detail);
+  const parent = detail?.parent_comm != null ? String(detail.parent_comm) : null;
+  const child = detail?.child_comm != null ? String(detail.child_comm) : null;
+  const isSecretsPush = alert.alert_type === 'ai_secrets_git_push' || (secrets.length > 0 && Boolean(child));
+
+  if (alert.alert_type === 'ai_sensitive_mcp_ungoverned_egress') {
+    const mcp = (detail?.governed_mcp || {}) as Record<string, unknown>;
+    const runtime = (detail?.ungoverned_runtime || {}) as Record<string, unknown>;
+    const server = mcp.server != null ? String(mcp.server) : 'MCP';
+    const tool = mcp.tool != null ? String(mcp.tool) : 'tool';
+    const dest = runtime.destination != null ? String(runtime.destination) : 'external host';
+    const proc = runtime.process != null ? String(runtime.process) : 'process';
+    const steps = [
+      { label: 'Governed MCP', value: `${server}/${tool}` },
+      { label: 'Ungoverned', value: `${proc} → ${dest}` },
+    ];
+    return (
+      <Stack spacing={1.25}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          What happened
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+          An AI agent read sensitive data through an approved MCP tool, then made ungoverned
+          external network contact. This is a potential sensitive-data exfiltration path
+          (correlation — not proof that data was transferred).
+        </Typography>
+        <Stack direction="row" spacing={1} alignItems="stretch" flexWrap="wrap" useFlexGap>
+          {steps.map((step, idx) => (
+            <Stack key={step.label} direction="row" spacing={1} alignItems="center">
+              {idx > 0 ? <ArrowForwardIcon fontSize="small" color="action" /> : null}
+              <Box
+                sx={{
+                  px: 1.25,
+                  py: 0.75,
+                  minWidth: 0,
+                  maxWidth: 280,
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mb: 0.25, fontWeight: 600 }}
+                >
+                  {step.label}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '0.75rem',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {step.value}
+                </Typography>
+              </Box>
+            </Stack>
+          ))}
+        </Stack>
+      </Stack>
+    );
+  }
+
+  if (isSecretsPush) {
+    const app = parent || String(detail?.app_name || 'AI app');
+    const secret = secrets[0] || 'a secret file';
+    const steps = [
+      { label: 'AI app', value: app },
+      { label: 'Secret accessed', value: secret },
+      { label: 'Action', value: 'Tried to git push' },
+    ];
+    return (
+      <Stack spacing={1.25}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          What happened
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+          {app} opened a sensitive file, then ran a git push that looked like it was trying to
+          include that secret.
+        </Typography>
+        <Stack direction="row" spacing={1} alignItems="stretch" flexWrap="wrap" useFlexGap>
+          {steps.map((step, idx) => (
+            <Stack key={step.label} direction="row" spacing={1} alignItems="center">
+              {idx > 0 ? <ArrowForwardIcon fontSize="small" color="action" /> : null}
+              <Box
+                sx={{
+                  px: 1.25,
+                  py: 0.75,
+                  minWidth: 0,
+                  maxWidth: 260,
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mb: 0.25, fontWeight: 600 }}
+                >
+                  {step.label}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    fontFamily:
+                      idx === 1
+                        ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                        : 'inherit',
+                    fontSize: idx === 1 ? '0.75rem' : undefined,
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {step.value}
+                </Typography>
+              </Box>
+            </Stack>
+          ))}
+        </Stack>
+      </Stack>
+    );
+  }
+
+  // Generic friendly fallback for other alerts with a process chain.
+  if (parent && child) {
+    return (
+      <Stack spacing={1}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          What happened
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          {parent} → {child}
+        </Typography>
+        {alert.message ? (
+          <Typography variant="body2" color="text.secondary">
+            {alert.message}
+          </Typography>
+        ) : null}
+      </Stack>
+    );
+  }
+
+  if (alert.message) {
+    return (
+      <Stack spacing={0.75}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          What happened
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {alert.message}
+        </Typography>
+      </Stack>
+    );
+  }
+
+  return null;
+}
+
+function TechnicalDetailsPanel({
+  alert,
+  detail,
+}: {
+  alert: SecurityAlert;
+  detail: AlertDetail | null;
+}) {
+  const parent = detail?.parent_comm != null ? String(detail.parent_comm) : null;
+  const child = detail?.child_comm != null ? String(detail.child_comm) : null;
+  const parentCmd = detail?.parent_cmdline != null ? String(detail.parent_cmdline).trim() : '';
+  const childCmd = detail?.child_cmdline != null ? String(detail.child_cmdline).trim() : '';
+  const singleCmd = detail?.cmdline != null ? String(detail.cmdline).trim() : '';
+  const secrets = secretsFromDetail(detail);
+  const isSecretsPush = secrets.length > 0 && Boolean(child);
 
   return (
-    <Stack spacing={1}>
-      {parent && child && (
-        <>
+    <Stack spacing={1.5}>
+      {(parent || child) && (
+        <Stack spacing={0.75}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
             Process chain
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Chip
-              label={`${parent}${detail.parent_pid != null ? ` (pid ${detail.parent_pid})` : ''}`}
-              size="small"
-              variant="outlined"
-            />
-            <ArrowForwardIcon fontSize="small" color="action" />
-            <Chip
-              label={`${child}${detail.child_pid != null ? ` (pid ${detail.child_pid})` : ''}`}
-              size="small"
-              color="warning"
-              variant="outlined"
-            />
+            {parent ? (
+              <Chip
+                label={`${parent}${detail?.parent_pid != null ? ` (pid ${detail.parent_pid})` : ''}`}
+                size="small"
+                variant="outlined"
+              />
+            ) : null}
+            {parent && child ? <ArrowForwardIcon fontSize="small" color="action" /> : null}
+            {secrets[0] ? (
+              <>
+                <Chip label={secrets[0]} size="small" color="error" variant="outlined" />
+                <ArrowForwardIcon fontSize="small" color="action" />
+              </>
+            ) : null}
+            {child ? (
+              <Chip
+                label={`${child}${detail?.child_pid != null ? ` (pid ${detail.child_pid})` : ''}`}
+                size="small"
+                color="warning"
+                variant="outlined"
+              />
+            ) : null}
           </Stack>
-        </>
+        </Stack>
       )}
-      {parentCmd ? <CmdlineBlock label="Parent command" value={parentCmd} /> : null}
-      {childCmd ? <CmdlineBlock label="Child command" value={childCmd} /> : null}
+      {parentCmd ? (
+        <CmdlineBlock label={isSecretsPush ? 'Cursor executable' : 'Parent command'} value={parentCmd} />
+      ) : null}
+      {childCmd ? (
+        <CmdlineBlock label={isSecretsPush ? 'Git command' : 'Child command'} value={childCmd} />
+      ) : null}
       {!parentCmd && !childCmd && singleCmd ? <CmdlineBlock label="Command" value={singleCmd} /> : null}
+      <AlertMetadata alert={alert} />
+      {detail ? <SourceEventView detail={detail} /> : null}
+      {detail ? <ProcessContextView detail={detail} /> : null}
+      {detail ? <DetailFields detail={detail} /> : null}
     </Stack>
   );
 }
@@ -969,10 +1221,19 @@ function DetailFields({ detail }: { detail: AlertDetail }) {
     'parent_cmdline',
     'child_cmdline',
     'cmdline',
+    'cursor_pid',
+    'git_pid',
+    'execution_path',
+    'secrets',
+    'secret_path',
+    'story',
+    'git_cmdline',
     'processes',
     'top_comms',
     'sample_limit',
     'source_event',
+    'session_id',
+    'app_name',
     'process_context_kind',
     'process_context_window_minutes',
     'network_connections',
@@ -1107,10 +1368,11 @@ function AlertRow({
   const label = TYPE_LABEL[alert.alert_type] || alert.alert_type.replace(/_/g, ' ');
   const severity = SEVERITY_COLOR[alert.severity] || 'default';
   const detail = parseDetail(alert.detail);
-  const sessionId = sessionIdFromAlertDetail(alert.detail);
+  const title = friendlyAlertTitle(alert, detail, label);
   const hasDetail = detail != null;
   const hasMetadata = Boolean(alert.device_id || alert.event_type || alert.event_id);
   const canExpand = hasDetail || hasMetadata;
+  const [showTechnical, setShowTechnical] = useState(false);
   const [explaining, setExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainModel, setExplainModel] = useState<string | null>(null);
@@ -1148,22 +1410,10 @@ function AlertRow({
                   variant="filled"
                 />
               ) : null}
-              {sessionId ? (
-                <Chip
-                  component="a"
-                  href={alert.device_id ? `/agents/${encodeURIComponent(alert.device_id)}` : undefined}
-                  clickable={Boolean(alert.device_id)}
-                  label={`session ${sessionId.slice(0, 12)}`}
-                  size="small"
-                  color="secondary"
-                  variant="outlined"
-                  onClick={(event) => event.stopPropagation()}
-                />
-              ) : null}
               <Chip label={label} size="small" color={severity} variant="outlined" />
               <Chip label={alert.severity} size="small" color={severity} />
               <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, minWidth: 160 }}>
-                {alert.message || label}
+                {title}
               </Typography>
               {canExpand && (expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />)}
             </Stack>
@@ -1180,12 +1430,22 @@ function AlertRow({
           <Box sx={{ px: 2, pb: 1.5, pt: 0.5 }}>
             <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'action.hover' }}>
               <Stack spacing={1.5}>
-                <AlertMetadata alert={alert} />
-                {detail ? <SourceEventView detail={detail} /> : null}
-                {detail ? <ProcessChainView detail={detail} /> : null}
-                {detail ? <ProcessContextView detail={detail} /> : null}
-                {detail ? <DetailFields detail={detail} /> : null}
-                <Stack direction="row" spacing={1} alignItems="center">
+                {/* User-facing summary; PIDs/commands live under Technical details */}
+                <FriendlyAlertSummary alert={alert} detail={detail} />
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant={showTechnical ? 'contained' : 'outlined'}
+                    color="inherit"
+                    startIcon={<CodeIcon />}
+                    endIcon={showTechnical ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setShowTechnical((v) => !v);
+                    }}
+                  >
+                    {showTechnical ? 'Hide technical details' : 'Technical details'}
+                  </Button>
                   <Button
                     size="small"
                     variant="outlined"
@@ -1201,6 +1461,19 @@ function AlertRow({
                     </Typography>
                   ) : null}
                 </Stack>
+                <Collapse in={showTechnical} timeout="auto" unmountOnExit>
+                  <Box
+                    sx={{
+                      p: 1.25,
+                      borderRadius: 1,
+                      border: 1,
+                      borderColor: 'divider',
+                      bgcolor: 'background.paper',
+                    }}
+                  >
+                    <TechnicalDetailsPanel alert={alert} detail={detail} />
+                  </Box>
+                </Collapse>
                 {explainError ? (
                   <Alert severity="error" onClose={() => setExplainError(null)}>
                     {explainError}
@@ -1231,6 +1504,7 @@ function AlertRow({
 export default function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [hideNovelProcess, setHideNovelProcess] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const severityParam = severityFilter === 'all' ? undefined : severityFilter;
   const { items, total, loading, refetch } = useSecurityAlerts({
@@ -1239,9 +1513,15 @@ export default function AlertsPage() {
   });
 
   const visibleItems = useMemo(() => {
-    if (categoryFilter === 'all') return items;
-    return items.filter((alert) => alertCategory(alert.alert_type) === categoryFilter);
-  }, [items, categoryFilter]);
+    let next = items;
+    if (hideNovelProcess) {
+      next = next.filter((alert) => alert.alert_type !== 'novel_process');
+    }
+    if (categoryFilter !== 'all') {
+      next = next.filter((alert) => alertCategory(alert.alert_type) === categoryFilter);
+    }
+    return next;
+  }, [items, categoryFilter, hideNovelProcess]);
 
   const emptyCopy = useMemo(() => {
     if (categoryFilter === 'ai') {
@@ -1345,9 +1625,28 @@ export default function AlertsPage() {
                 </ToggleButton>
               </ToggleButtonGroup>
             </Stack>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={hideNovelProcess}
+                  onChange={(event) => setHideNovelProcess(event.target.checked)}
+                />
+              }
+              label={
+                <Typography variant="caption" color="text.secondary">
+                  Hide novel process
+                </Typography>
+              }
+              sx={{ ml: 0.5, mr: 0 }}
+            />
             {total > 0 && (
               <Chip
-                label={categoryFilter === 'all' ? total : `${visibleItems.length}/${total}`}
+                label={
+                  hideNovelProcess || categoryFilter !== 'all'
+                    ? `${visibleItems.length}/${total}`
+                    : total
+                }
                 size="small"
                 variant="outlined"
               />

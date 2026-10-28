@@ -1,8 +1,17 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+# Listing only returns the last 90 days, so anchor fixtures to yesterday.
+_BASE_DAY = (datetime.now(timezone.utc) - timedelta(days=1)).replace(
+    hour=0, minute=0, second=0, microsecond=0
+)
+
+
+def _at(hour: int, minute: int, second: int) -> datetime:
+    return _BASE_DAY.replace(hour=hour, minute=minute, second=second)
 
 
 def test_ingest_and_list_security_alerts(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 12, 0, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(12, 0, 0).isoformat()
     ingest = api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -28,14 +37,14 @@ def test_ingest_and_list_security_alerts(api_client, db_session, ingest_env):
     assert body["items"][0]["device_id"] == "dev_alert_test"
 
 
-def test_ingest_skips_non_high_severity(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 12, 2, 0, tzinfo=timezone.utc).isoformat()
+def test_ingest_keeps_all_severities(api_client, db_session, ingest_env):
+    ts = _at(12, 2, 0).isoformat()
     ingest = api_client.post(
         "/security/alerts/ingest",
         json=[
             {
                 "timestamp": ts,
-                "device_id": "dev_low",
+                "device_id": "dev_all_sev",
                 "event_id": "evt_low",
                 "alert_type": "idle_with_network_activity",
                 "severity": "low",
@@ -43,22 +52,30 @@ def test_ingest_skips_non_high_severity(api_client, db_session, ingest_env):
             },
             {
                 "timestamp": ts,
-                "device_id": "dev_low",
+                "device_id": "dev_all_sev",
                 "event_id": "evt_med",
-                "alert_type": "network_type_change",
+                "alert_type": "novel_process",
                 "severity": "medium",
-                "message": "Network type changed",
+                "message": "Novel process",
+            },
+            {
+                "timestamp": ts,
+                "device_id": "dev_all_sev",
+                "event_id": "evt_high",
+                "alert_type": "temp_path_execution",
+                "severity": "high",
+                "message": "Temp path execution",
             },
         ],
     )
     assert ingest.status_code == 200
-    assert ingest.json()["created"] == 0
-    listed = api_client.get("/security/alerts?device_id=dev_low")
-    assert listed.json()["total"] == 0
+    assert ingest.json()["created"] == 3
+    listed = api_client.get("/security/alerts?device_id=dev_all_sev")
+    assert listed.json()["total"] == 3
 
 
 def test_ingest_is_idempotent_by_fingerprint(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 12, 5, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(12, 5, 0).isoformat()
     payload = [
         {
             "timestamp": ts,
@@ -84,7 +101,7 @@ def test_ingest_is_idempotent_by_fingerprint(api_client, db_session, ingest_env)
 
 
 def test_ingest_dedupes_within_single_batch(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 12, 6, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(12, 6, 0).isoformat()
     item = {
         "timestamp": ts,
         "device_id": "dev_batch_dupe",
@@ -100,7 +117,7 @@ def test_ingest_dedupes_within_single_batch(api_client, db_session, ingest_env):
 
 def test_ingest_cooldowns_windowed_alert_within_window(api_client, db_session, ingest_env):
     """Windowed rules share one fingerprint per cooldown bucket, not per event_id."""
-    base = datetime(2026, 7, 11, 12, 10, 0, tzinfo=timezone.utc)
+    base = _at(12, 10, 0)
     first = api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -141,7 +158,7 @@ def test_ingest_cooldowns_windowed_alert_within_window(api_client, db_session, i
 
 
 def test_ingest_accepts_legacy_trusttwin_device_id(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 12, 30, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(12, 30, 0).isoformat()
     ingest = api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -163,7 +180,7 @@ def test_ingest_accepts_legacy_trusttwin_device_id(api_client, db_session, inges
 
 
 def test_list_security_alerts_filter_type(api_client, db_session, ingest_env):
-    ts = datetime(2026, 7, 11, 13, 0, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(13, 0, 0).isoformat()
     api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -183,8 +200,8 @@ def test_list_security_alerts_filter_type(api_client, db_session, ingest_env):
 
 
 def test_list_security_alerts_filter_severity(api_client, db_session, ingest_env):
-    ts_high = datetime(2026, 7, 11, 14, 0, 0, tzinfo=timezone.utc).isoformat()
-    ts_low = datetime(2026, 7, 11, 14, 1, 0, tzinfo=timezone.utc).isoformat()
+    ts_high = _at(14, 0, 0).isoformat()
+    ts_low = _at(14, 1, 0).isoformat()
     api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -212,12 +229,15 @@ def test_list_security_alerts_filter_severity(api_client, db_session, ingest_env
     assert all(item["alert_type"] == "temp_path_execution" for item in body["items"])
 
 
-def test_ingest_noop_when_detection_engine_is_source(api_client, db_session, ingest_env, monkeypatch):
+def test_ingest_persists_when_detection_engine_configured(
+    api_client, db_session, ingest_env, monkeypatch
+):
+    """Write-through: Postgres stores high alerts even when detection-engine is live."""
     monkeypatch.setattr(
         "app.shared.config.settings.DETECTION_ENGINE_URL",
         "http://detection-engine:9090",
     )
-    ts = datetime(2026, 7, 11, 15, 0, 0, tzinfo=timezone.utc).isoformat()
+    ts = _at(15, 0, 0).isoformat()
     ingest = api_client.post(
         "/security/alerts/ingest",
         json=[
@@ -226,50 +246,45 @@ def test_ingest_noop_when_detection_engine_is_source(api_client, db_session, ing
                 "device_id": "dev_engine_mode",
                 "alert_type": "temp_path_execution",
                 "severity": "high",
-                "message": "should not persist",
+                "message": "should persist to postgres",
             }
         ],
     )
     assert ingest.status_code == 200
-    assert ingest.json()["created"] == 0
+    assert ingest.json()["created"] == 1
+
+    listed = api_client.get("/security/alerts?device_id=dev_engine_mode")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["total"] == 1
+    assert body["items"][0]["message"] == "should persist to postgres"
 
 
-def test_list_proxies_detection_engine(api_client, monkeypatch):
-    from app.features.twin.schemas.security_alert import SecurityAlertListResponse, SecurityAlertResponse
-
-    ts = datetime(2026, 7, 11, 16, 0, 0, tzinfo=timezone.utc)
-
-    def fake_fetch(**_kwargs):
-        return SecurityAlertListResponse(
-            items=[
-                SecurityAlertResponse(
-                    id=1,
-                    timestamp=ts,
-                    device_id="dev_proxy",
-                    alert_type="shell_spawns_downloader",
-                    severity="high",
-                    message="from engine",
-                )
-            ],
-            total=1,
-            page=1,
-            page_size=50,
-            pages=1,
-        )
-
-    monkeypatch.setattr(
-        "app.features.twin.services.security_alert_service.fetch_security_alerts",
-        fake_fetch,
-    )
+def test_list_reads_postgres_even_with_detection_engine_url(
+    api_client, db_session, ingest_env, monkeypatch
+):
     monkeypatch.setattr(
         "app.shared.config.settings.DETECTION_ENGINE_URL",
         "http://detection-engine:9090",
     )
-    response = api_client.get("/security/alerts?device_id=dev_proxy")
+    ts = _at(16, 0, 0).isoformat()
+    api_client.post(
+        "/security/alerts/ingest",
+        json=[
+            {
+                "timestamp": ts,
+                "device_id": "dev_db_source",
+                "alert_type": "shell_spawns_downloader",
+                "severity": "high",
+                "message": "from postgres",
+            }
+        ],
+    )
+    response = api_client.get("/security/alerts?device_id=dev_db_source")
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1
-    assert body["items"][0]["message"] == "from engine"
+    assert body["items"][0]["message"] == "from postgres"
 
 
 def test_baseline_proxies_detection_engine(api_client, monkeypatch):

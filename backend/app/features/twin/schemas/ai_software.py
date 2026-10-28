@@ -51,7 +51,10 @@ class AiSoftwareItem(BaseModel):
     enabled: Optional[bool] = None
     active: Optional[bool] = None
     mcp_configured: bool = False
+    mcp_servers: List[str] = Field(default_factory=list)
+    mcp_server_tools: dict[str, List[str]] = Field(default_factory=dict)
     local_model_product_id: str = ""
+    skills: List[dict] = Field(default_factory=list)
 
 
 class AiSoftwareListResponse(BaseModel):

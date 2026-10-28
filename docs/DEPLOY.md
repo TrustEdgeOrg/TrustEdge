@@ -52,11 +52,29 @@ Compose file: [`docker-compose.yml`](../docker-compose.yml).
 | `backend` | FastAPI; env from `/etc/trustedge/backend.env`; `DETECTION_ENGINE_URL` → detection-engine |
 | `detection-engine` | Consumes Kafka; may proxy alerts / AI session APIs |
 | `redpanda` | Kafka-compatible broker (`trustedge.agent.events`) |
-| `redis` | Twin / live presence |
-| `trustedge-agent-api` | Profile `agent` — image from ECR when available |
+| `redpanda-console` | Optional `console` profile; loopback-only Kafka UI, access via SSH tunnel |
+| `redis` | Twin / live presence (fail-open) |
+| `trustedge-agent-api` | Profile `agent` — image from ECR when available; device creds via dedicated Postgres (`TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL`, not control-plane RDS) |
 | `ollama` | Profile `ai` — optional local LLM for alert / overview explain |
 
 See [ENV_SETUP.md](ENV_SETUP.md) for variables.
+
+### Redpanda Console
+
+On the EC2 host, start the optional Console service:
+
+```bash
+cd ~/trustedge
+COMPOSE_PROFILES=console docker compose up -d redpanda-console
+```
+
+The UI binds to `127.0.0.1:8081` on the host; it is not exposed publicly. From your workstation, open an SSH tunnel:
+
+```bash
+ssh -L 8081:127.0.0.1:8081 ec2-user@<instance-hostname>
+```
+
+Then open `http://localhost:8081`. Keep the tunnel open while using the UI. If you also need another optional Compose profile, include it in the comma-separated `COMPOSE_PROFILES` value.
 
 ### Useful host scripts
 

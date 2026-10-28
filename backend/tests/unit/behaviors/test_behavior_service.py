@@ -41,6 +41,20 @@ def test_observe_increments_and_lists(db_session, monkeypatch):
     assert listed.items[0].count == 2
 
 
+def test_clear_device_removes_rows(db_session, monkeypatch):
+    monkeypatch.setenv("BEHAVIOR_SUPPRESS_COUNT", "20")
+    service = BehaviorService(db_session)
+    service.observe(
+        BehaviorObserveRequest(
+            device_id="dev_wipe",
+            behavior_kind="process_comm",
+            behavior_key="chrome",
+        )
+    )
+    assert service.clear_device("dev_wipe") == 1
+    assert service.list_for_device("dev_wipe").total == 0
+
+
 def test_observe_suppresses_when_count_and_age_met(db_session, monkeypatch):
     monkeypatch.setenv("BEHAVIOR_SUPPRESS_COUNT", "2")
     monkeypatch.setenv("BEHAVIOR_SUPPRESS_AGE_HOURS", "1")

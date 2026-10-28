@@ -79,6 +79,10 @@ export const twinApi = {
     apiFetch<AgentTelemetryEventListResponse>(
       `/security/agents/${encodeURIComponent(deviceId)}/events?limit=${encodeURIComponent(String(limit))}`
     ),
+  listAgentActions: (deviceId: string, limit = 200) =>
+    apiFetch<AgentTelemetryEventListResponse>(
+      `/security/agents/${encodeURIComponent(deviceId)}/agent-actions?limit=${encodeURIComponent(String(limit))}`
+    ),
   listAiSoftware: (deviceId: string) =>
     apiFetch<AiSoftwareListResponse>(
       `/security/agents/${encodeURIComponent(deviceId)}/ai-software`

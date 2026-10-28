@@ -10,6 +10,13 @@ export type AiSoftwareLocalClient = {
   product_id?: string;
 };
 
+export type AiAgentSkill = {
+  id: string;
+  name: string;
+  source: string;
+  scope: string;
+};
+
 export type AiSoftwareItem = {
   id: string;
   product_id: string;
@@ -53,7 +60,10 @@ export type AiSoftwareItem = {
   enabled?: boolean | null;
   active?: boolean | null;
   mcp_configured?: boolean;
+  mcp_servers?: string[];
+  mcp_server_tools?: Record<string, string[]>;
   local_model_product_id?: string;
+  skills?: AiAgentSkill[];
 };
 
 export type AiSoftwareListResponse = {

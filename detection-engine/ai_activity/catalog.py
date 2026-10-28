@@ -212,9 +212,11 @@ ENGINE_AI_ACTIVITY: Final = "ai_activity"
 FINDING_TERMINAL_TOOL_CHAIN: Final = "ai_terminal_tool_chain"
 FINDING_SHELL_NETWORK_EXFIL: Final = "ai_shell_network_exfil"
 FINDING_SECRETS_ACCESS: Final = "ai_secrets_access"
+FINDING_SECRETS_GIT_PUSH: Final = "ai_secrets_git_push"
 FINDING_CLOUD_CLI: Final = "ai_cloud_cli_from_agent"
 FINDING_CONTAINER_DEPLOY: Final = "ai_container_build_deploy"
 FINDING_MULTI_TOOL_BURST: Final = "ai_multi_tool_burst"
+FINDING_SENSITIVE_MCP_UNGOVERNED_EGRESS: Final = "ai_sensitive_mcp_ungoverned_egress"
 
 # Session bookkeeping
 DEFAULT_MAX_TIMELINE_EVENTS: Final = 500

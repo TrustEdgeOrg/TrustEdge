@@ -54,7 +54,7 @@ const STEPS: FlowStep[] = [
     title: 'Route by signal',
     plain: 'Only engines and rules that apply to this event type run.',
     detail:
-      'process_start → process / chain rules and AI activity. network_summary → network rules. driver / service / persistence → security rules. known_ai_app → AI inventory context.',
+      'process_start → process / chain rules and AI activity. network_summary → network rules. driver / service / persistence → security rules. known_ai_app → AI inventory context. ai_agent_action → MCP / agent-action governance.',
     icon: <FilterAltOutlinedIcon fontSize="small" />,
     tone: 'path',
   },

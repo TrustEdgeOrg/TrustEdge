@@ -159,7 +159,7 @@ def get_device_baseline(
     limit: int = Query(default=100, ge=1, le=500),
     _: None = Depends(verify_admin_api_token),
 ):
-    """In-memory behavioral baseline for a device (from detection-engine)."""
+    """In-memory behavioral baseline for a device (from detection-engine; hydrated from Postgres)."""
     if not settings.DETECTION_ENGINE_URL.strip():
         raise HTTPException(
             status_code=503,
@@ -176,7 +176,7 @@ def delete_device_baseline(
     device_id: str,
     _: None = Depends(verify_admin_api_token),
 ):
-    """Flush in-memory behavioral learning for a device (detection-engine)."""
+    """Flush RAM + durable Postgres baseline for a device (via detection-engine)."""
     if not settings.DETECTION_ENGINE_URL.strip():
         raise HTTPException(
             status_code=503,

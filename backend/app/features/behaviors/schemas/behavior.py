@@ -50,3 +50,8 @@ class DeviceBehaviorRead(BaseModel):
 class DeviceBehaviorListResponse(BaseModel):
     items: List[DeviceBehaviorRead] = Field(default_factory=list)
     total: int = 0
+
+
+class BehaviorClearResponse(BaseModel):
+    device_id: str
+    cleared: int = 0

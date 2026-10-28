@@ -20,10 +20,13 @@ from baseline_view import bind as bind_baseline
 from ai_activity.view import bind as bind_ai_activity
 from http_api import serve_forever
 from log_config import setup_logging, structured_extra
+from pipeline.baseline_store import BaselineStore
+from pipeline.behavior_persist import persister_from_env
+from pipeline.agent_action_persist import persister_from_env as agent_action_persister_from_env
+from pipeline.behavioral import BehavioralEngine
 from pipeline.orchestrator import Pipeline
 from recent_alerts import append as remember_alert
 from rules.alerts import SecurityAlert
-from rules.constants import SEVERITY_HIGH
 from rules.metrics import METRICS
 
 SERVICE = os.getenv("LOG_SERVICE", "detection-engine")
@@ -31,7 +34,13 @@ LOG = setup_logging(service=SERVICE, logger_name=__name__)
 logging.getLogger("kafka").setLevel(logging.WARNING)
 
 _shutdown = False
-_pipeline = Pipeline()
+_behavior_persister = persister_from_env()
+_agent_action_persister = agent_action_persister_from_env()
+_baseline = BaselineStore()
+_pipeline = Pipeline(
+    baseline=_baseline,
+    behavioral=BehavioralEngine(_baseline, persister=_behavior_persister),
+)
 bind_baseline(_pipeline.baseline, _pipeline.behavioral)
 bind_ai_activity(_pipeline.ai_activity.sessions)
 # Fingerprints already posted this process lifetime, to avoid re-emitting the
@@ -126,8 +135,8 @@ def _emit_alert(alert: SecurityAlert) -> None:
             score=alert.score,
         ),
     )
-    # Optional Postgres ingest still stores high-severity only when enabled.
-    if _post_alerts_to_backend() and (alert.severity or "").strip().lower() == SEVERITY_HIGH:
+    # Durable Postgres ingest for all severities (dashboard history).
+    if _post_alerts_to_backend():
         post_alerts([api])
 
 
@@ -150,6 +159,7 @@ def _process_event(raw: str) -> None:
     )
 
     finding = _pipeline.process_event(payload)
+    _agent_action_persister.enqueue(payload)
 
     global _events_since_metrics_log
     _events_since_metrics_log += 1
@@ -184,6 +194,8 @@ def run() -> int:
 
     api_thread = threading.Thread(target=serve_forever, name="alert-api", daemon=True)
     api_thread.start()
+    _behavior_persister.start()
+    _agent_action_persister.start()
 
     retries = 0
     consumer: KafkaConsumer | None = None
@@ -220,6 +232,7 @@ def run() -> int:
 
     if consumer is not None:
         consumer.close()
+    _behavior_persister.stop()
     LOG.info("consumer stopped", extra=structured_extra("consumer_stopped"))
     return 0
 

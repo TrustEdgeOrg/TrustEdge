@@ -35,7 +35,7 @@ AWS host layout and CI/CD: [DEPLOY.md](DEPLOY.md).
 | **Stream** | Kafka / Redpanda | `trustedge.agent.events` |
 | **Detection** | `detection-engine` | YAML rules, behavior baselines / novelty, AI activity → alerts |
 | **Control plane** | FastAPI + React | Alerts, agents, AI inventory, baselines, AI sessions, overview |
-| **Data** | RDS PostgreSQL, Redis | Durable agents/alerts/behaviors · live twin |
+| **Data** | Control-plane Postgres (agents/alerts/behaviors); Agent-API Postgres (device creds); Redis twin | Durable control plane · durable device auth · live posture |
 | **Hosting** | EC2 Compose, S3, CloudFront, ECR | Runtime, dashboard, images |
 
 ---
@@ -53,8 +53,10 @@ TrustEdge Agent
       → POST /internal/agents/upsert (ingest token) → Postgres agents
   → detection-engine (consume Kafka)
       → rules + behavior + AI activity
-      → POST /security/alerts/ingest (ingest token) → Backend / alerts UI
-      → POST /internal/behaviors/observe (ingest token) → Postgres behaviors
+      → in-memory hot alert window
+      → POST /security/alerts/ingest (ingest token) → Postgres `security_alerts` (all severities, durable) → alerts UI
+      → behavior: RAM BaselineStore (hot path) ← GET /internal/behaviors (hydrate on first device event)
+                 → POST /internal/behaviors/observe (async write-behind) → Postgres `device_behaviors`
 ```
 
 ### Operator reads (admin token)
@@ -85,7 +87,9 @@ Host conntrack watcher → POST /network-flows/bulk → Redis window → GET /ne
 |-------|--------|-----------|
 | Endpoint posture | Agent telemetry + Redis twin | Agents · timeline |
 | AI tools inventory | `known_ai_app` events | Agent detail |
-| Behavior | Baselines + `behaviors` store | Agent detail · novel-process alerts |
+| AI agent actions (MCP) | `ai_agent_action` events | Agent detail · AI agent actions |
+| Sensitive MCP → ungoverned egress | `ai_sensitive_mcp_ungoverned_egress` | Alerts |
+| Behavior | RAM baseline (hot) + Postgres `device_behaviors` (durable) | Agent detail · novel-process alerts |
 | AI activity | detection-engine sessions | Agent detail (sessions / graph / chain) |
 | Detection | Rules · behavior · AI activity | Alerts (+ optional Ollama explain) |
 | L4 flows | Host conntrack (optional) | Live flow API (no map UI) |
@@ -93,7 +97,7 @@ Host conntrack watcher → POST /network-flows/bulk → Redis window → GET /ne
 ### Detection engines
 
 - **YAML attack/chain rules** — process, network, security lifecycle (+ correlation)
-- **Behavioral engine** — per-device baselines, novel-process alerts, suppress known
+- **Behavioral engine** — per-device RAM baseline, Postgres hydrate/write-behind, novel-process, suppress known
 - **AI activity engine** — agentic session reconstruction and AI-tool findings
 
 Optional LLMs (Ollama / OpenAI / templates) explain alerts and network overview — they do not judge.

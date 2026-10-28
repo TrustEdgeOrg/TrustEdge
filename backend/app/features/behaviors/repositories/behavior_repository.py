@@ -42,6 +42,19 @@ class BehaviorRepository:
             .all()
         )
 
+    def delete_for_device(self, device_id: str) -> int:
+        """Drop all learned rows for a device. Returns how many were deleted."""
+        device_id = device_id.strip()
+        if not device_id:
+            return 0
+        deleted = (
+            self.db.query(DeviceBehavior)
+            .filter(DeviceBehavior.device_id == device_id)
+            .delete(synchronize_session=False)
+        )
+        self.db.commit()
+        return int(deleted or 0)
+
     def process_comm_profile_stats(self, device_id: str) -> Tuple[int, Optional[datetime]]:
         """Return (distinct process_comm key count, oldest first_seen_at) for a device."""
         device_id = device_id.strip()

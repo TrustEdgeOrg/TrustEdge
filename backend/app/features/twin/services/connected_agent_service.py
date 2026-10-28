@@ -45,6 +45,29 @@ def _as_optional_bool(value: Any) -> bool | None:
     return None
 
 
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        s = str(item).strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _as_str_map_list(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, raw in value.items():
+        server = str(key).strip()
+        if not server:
+            continue
+        out[server] = _as_str_list(raw)
+    return out
+
+
 def _connected_agent_from_latest(
     row: trusttwin_store.TwinDeviceLatest,
     *,
@@ -190,7 +213,10 @@ class ConnectedAgentService:
                     enabled=_as_optional_bool(payload.get("enabled")),
                     active=_as_optional_bool(payload.get("active")),
                     mcp_configured=bool(payload.get("mcp_configured")),
+                    mcp_servers=_as_str_list(payload.get("mcp_servers")),
+                    mcp_server_tools=_as_str_map_list(payload.get("mcp_server_tools")),
                     local_model_product_id=str(payload.get("local_model_product_id") or ""),
+                    skills=_as_dict_list(payload.get("skills")),
                 )
             )
         items.sort(key=lambda x: (x.product_name or x.product_id or x.id).lower())

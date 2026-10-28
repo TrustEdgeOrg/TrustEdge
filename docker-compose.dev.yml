@@ -55,6 +55,25 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Agent-API owns device credentials (DB-per-service; not the control-plane DB).
+  postgres-agent-api:
+    image: postgres:16-alpine
+    container_name: trustedge-dev-postgres-agent-api
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: trustedge
+      POSTGRES_DB: trustedge_agent_api
+    ports:
+      - "${DEV_POSTGRES_AGENT_API_PORT:-5433}:5432"
+    volumes:
+      - trustedge-dev-pg-agent-api:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trustedge_agent_api"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -79,7 +98,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       BEHAVIOR_SUPPRESS_COUNT: ${BEHAVIOR_SUPPRESS_COUNT:-20}
       BEHAVIOR_SUPPRESS_AGE_HOURS: ${BEHAVIOR_SUPPRESS_AGE_HOURS:-0}
-      BEHAVIOR_PROFILE_MIN_KEYS: ${BEHAVIOR_PROFILE_MIN_KEYS:-5}
+      BEHAVIOR_PROFILE_MIN_KEYS: ${BEHAVIOR_PROFILE_MIN_KEYS:-30}
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +143,18 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  redpanda-console:
+    image: ${REDPANDA_CONSOLE_IMAGE:-docker.redpanda.com/redpandadata/console:v2.8.8}
+    container_name: trustedge-dev-redpanda-console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "127.0.0.1:${DEV_REDPANDA_CONSOLE_PORT:-8081}:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
   detection-engine:
     build:
       context: ./detection-engine
@@ -134,7 +165,9 @@ services:
       KAFKA_TOPIC: trustedge.agent.events
       KAFKA_GROUP_ID: detection-engine
       ALERT_API_PORT: "9090"
-      TRUSTEDGE_POST_ALERTS_TO_BACKEND: "0"
+      TRUSTEDGE_POST_ALERTS_TO_BACKEND: "1"
+      TRUSTEDGE_POST_BEHAVIORS_TO_BACKEND: "1"
+      TRUSTEDGE_POST_AGENT_ACTIONS_TO_BACKEND: "1"
       API_BASE_URL: http://backend:8000
       TRUSTEDGE_INGEST_TOKEN: ${TRUSTEDGE_INGEST_TOKEN:-}
       TRUSTEDGE_BEHAVIOR_BASELINE: "1"
@@ -166,12 +199,16 @@ services:
       TRUSTEDGE_BACKEND_URL: ${TRUSTEDGE_BACKEND_URL:-http://backend:8000}
       TRUSTEDGE_INGEST_TOKEN: ${TRUSTEDGE_INGEST_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
+      # Postgres-only device auth (no auth-cache Redis). Own DB, not control-plane postgres.
+      TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL: postgresql://postgres:trustedge@postgres-agent-api:5432/trustedge_agent_api
       KAFKA_BROKERS: redpanda:9092
       KAFKA_TOPIC: trustedge.agent.events
     volumes:
       - trustedge-dev-agent-data:/data
     depends_on:
       redis:
+        condition: service_healthy
+      postgres-agent-api:
         condition: service_healthy
       redpanda:
         condition: service_healthy
@@ -187,6 +224,7 @@ services:
 
 volumes:
   trustedge-dev-pg:
+  trustedge-dev-pg-agent-api:
   trustedge-dev-agent-data:
   trustedge-dev-redpanda-data:
   trustedge-dev-ollama-data:

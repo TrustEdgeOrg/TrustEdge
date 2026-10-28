@@ -22,3 +22,13 @@ def test_observe_and_list_behaviors(api_client, ingest_env):
     payload = listed.json()
     assert payload["total"] == 1
     assert payload["items"][0]["behavior_key"] == "zsh>curl"
+
+    internal = api_client.get("/internal/behaviors", params={"device_id": "dev_api"})
+    assert internal.status_code == 200
+    assert internal.json()["total"] == 1
+
+    cleared = api_client.delete("/internal/behaviors/dev_api")
+    assert cleared.status_code == 200
+    assert cleared.json()["cleared"] == 1
+    empty = api_client.get("/internal/behaviors", params={"device_id": "dev_api"})
+    assert empty.json()["total"] == 0
