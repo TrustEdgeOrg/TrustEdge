@@ -84,6 +84,8 @@ Do **not** point `REACT_APP_API_BASE_URL` at the dashboard CloudFront URL — on
 | `LOG_JSON` | Structured JSON logs | `1` (see [DEPLOY.md](DEPLOY.md#cloudwatch-logging)) |
 | `LOG_SERVICE` | Log field `service` | `backend` |
 | `DETECTION_ENGINE_URL` | detection-engine HTTP base | Compose default `http://detection-engine:9090` |
+| `TRUSTEDGE_POST_ALERTS_TO_BACKEND` | Detection posts alerts to Postgres via backend ingest | `1` in compose (write-through to `security_alerts`) |
+| `TRUSTEDGE_POST_BEHAVIORS_TO_BACKEND` | Detection hydrates/persists behavior baseline to Postgres | `1` in compose (`device_behaviors`; RAM stays the hot path) |
 | `CORS_ORIGINS` | Extra allowed origins (CSV) | Add dashboard CloudFront if needed |
 
 ### Security
@@ -97,7 +99,17 @@ Do **not** point `REACT_APP_API_BASE_URL` at the dashboard CloudFront URL — on
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REDIS_URL` | Live twin / agent state | `redis://redis:6379/0` |
+| `REDIS_URL` | Live twin / agent state (fail-open) | `redis://redis:6379/0` |
+
+### Agent-API device credentials (DB-per-service)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL` | **Agent-API-owned** Postgres for `token_hash → device_id` (not the control-plane DB) | Dev compose: `postgres-agent-api` / `trustedge_agent_api`. Prod: separate RDS DB (or second database on the same instance). |
+| `TRUSTEDGE_AGENT_DEVICE_CREDS_REDIS_URL` | Optional auth-cache Redis (advanced; empty = Postgres-only) | _(empty)_ |
+| `TRUSTEDGE_AGENT_DEVICE_CREDS_CACHE_TTL_SEC` | Auth cache TTL when Redis URL is set | `300` |
+
+**Cutover:** if an existing env already has rows in a shared control-plane `agent_device_credentials` table, `pg_dump`/`COPY` that table into the Agent-API database before pointing `TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL` at the new DB.
 
 ### Network review / LLM
 

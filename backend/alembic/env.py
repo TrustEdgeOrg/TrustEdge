@@ -12,6 +12,7 @@ from app.shared.database import Base
 from app.features.agents.models.agent import Agent  # noqa: F401
 from app.features.twin.models.security_alert import SecurityAlert  # noqa: F401
 from app.features.behaviors.models.device_behavior import DeviceBehavior  # noqa: F401
+from app.features.agent_actions.models.ai_agent_action import AiAgentAction  # noqa: F401
 
 
 config = context.config

@@ -3,6 +3,51 @@ import { agentsApi } from '../config/api';
 import { twinApi } from '../../twin/config/api';
 import { Agent } from '../types/agent';
 import { AgentTelemetryEvent, ConnectedAgent } from '../../twin/types/connectedAgent';
+import { isAiAgentActionEvent } from '../utils/agentActionDisplay';
+
+function mergeEvents(
+  twinEvents: AgentTelemetryEvent[],
+  durableActions: AgentTelemetryEvent[]
+): AgentTelemetryEvent[] {
+  const byId = new Map<string, AgentTelemetryEvent>();
+  const fallback: AgentTelemetryEvent[] = [];
+
+  const add = (event: AgentTelemetryEvent) => {
+    const id = String(event.event_id || '').trim();
+    if (id) {
+      if (!byId.has(id)) byId.set(id, event);
+      return;
+    }
+    fallback.push(event);
+  };
+
+  for (const event of durableActions) {
+    if (isAiAgentActionEvent(event.type)) add(event);
+  }
+  for (const event of twinEvents) {
+    add(event);
+  }
+
+  return [...byId.values(), ...fallback].sort((a, b) => {
+    const ta = Date.parse(a.ts || '') || 0;
+    const tb = Date.parse(b.ts || '') || 0;
+    return tb - ta;
+  });
+}
+
+async function loadMergedEvents(agentId: string): Promise<AgentTelemetryEvent[]> {
+  const [twinResult, actionsResult] = await Promise.allSettled([
+    // Larger twin window so host process/file events can correlate to turns.
+    twinApi.listDeviceEvents(agentId, 200),
+    twinApi.listAgentActions(agentId, 200),
+  ]);
+
+  const twin =
+    twinResult.status === 'fulfilled' ? twinResult.value.items || [] : [];
+  const durable =
+    actionsResult.status === 'fulfilled' ? actionsResult.value.items || [] : [];
+  return mergeEvents(twin, durable);
+}
 
 export function useAgentDetail(agentId: string | undefined) {
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -28,24 +73,22 @@ export function useAgentDetail(agentId: string | undefined) {
       const registry = await agentsApi.get(agentId);
       setAgent(registry);
 
-      const [liveResult, eventsResult] = await Promise.allSettled([
-        twinApi.getConnectedAgent(agentId),
-        twinApi.listDeviceEvents(agentId, 50),
+      const [liveResult, events] = await Promise.all([
+        twinApi.getConnectedAgent(agentId).then(
+          (value) => ({ ok: true as const, value }),
+          () => ({ ok: false as const })
+        ),
+        loadMergedEvents(agentId),
       ]);
 
-      if (liveResult.status === 'fulfilled') {
+      if (liveResult.ok) {
         setLive(liveResult.value);
         setLiveMissing(false);
       } else {
         setLive(null);
         setLiveMissing(true);
       }
-
-      if (eventsResult.status === 'fulfilled') {
-        setEvents(eventsResult.value.items || []);
-      } else {
-        setEvents([]);
-      }
+      setEvents(events);
     } catch (e) {
       setAgent(null);
       setLive(null);
@@ -62,8 +105,7 @@ export function useAgentDetail(agentId: string | undefined) {
       return;
     }
     try {
-      const eventsResult = await twinApi.listDeviceEvents(agentId, 50);
-      setEvents(eventsResult.items || []);
+      setEvents(await loadMergedEvents(agentId));
     } catch {
       setEvents([]);
     }

@@ -56,7 +56,9 @@ See [ENV_SETUP.md](ENV_SETUP.md). This table is a curated map — prefer live Op
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/behaviors` | Admin | Device behavior observations |
-| `POST` | `/internal/behaviors/observe` | Ingest | Record behavior observation (detection-engine) |
+| `GET` | `/internal/behaviors` | Ingest | Hydrate detection-engine RAM from Postgres |
+| `POST` | `/internal/behaviors/observe` | Ingest | Increment a behavior counter (write-behind) |
+| `DELETE` | `/internal/behaviors/{device_id}` | Ingest | Clear durable baseline for a device |
 
 ---
 

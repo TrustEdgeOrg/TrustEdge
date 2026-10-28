@@ -1,4 +1,8 @@
-"""In-memory per-device behavior baseline (no Postgres)."""
+"""In-memory per-device behavior baseline (hot path).
+
+Durable copy lives in Postgres via async write-behind; this map is what
+evaluate() reads. Restart hydrates from Postgres, then continues in RAM.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ def _ts_iso(epoch: float) -> str:
 
 
 KIND_PROCESS_COMM = "process_comm"
+KIND_CURSOR_TOOL = "cursor_tool"
 
 
 @dataclass
@@ -67,12 +72,41 @@ class BaselineStore:
         self.profile_min_keys = (
             profile_min_keys
             if profile_min_keys is not None
-            else _env_int("BEHAVIOR_PROFILE_MIN_KEYS", 5)
+            else _env_int("BEHAVIOR_PROFILE_MIN_KEYS", 30)
         )
         self._devices: dict[str, dict[tuple[str, str], BaselineEntry]] = {}
 
     def clear(self) -> None:
         self._devices.clear()
+
+    def seed(
+        self,
+        device_id: str,
+        behavior_kind: str,
+        behavior_key: str,
+        *,
+        count: int,
+        first_seen: float,
+        last_seen: float,
+    ) -> bool:
+        """Load a durable row into RAM. Does not increment. Skips keys already present."""
+        device = (device_id or "").strip()
+        kind = (behavior_kind or "").strip()
+        key = (behavior_key or "").strip()
+        if not device or not kind or not key:
+            return False
+        by_key = self._devices.setdefault(device, {})
+        if (kind, key) in by_key:
+            return False
+        n = int(count) if count else 1
+        if n < 1:
+            n = 1
+        by_key[(kind, key)] = BaselineEntry(
+            count=n,
+            first_seen=float(first_seen),
+            last_seen=float(last_seen) if last_seen else float(first_seen),
+        )
+        return True
 
     def clear_device(self, device_id: str) -> int:
         """Drop all learned keys for one device. Returns how many entries were removed."""
@@ -159,3 +193,9 @@ class BaselineStore:
         by_key = self._devices.get(device_id) or {}
         comm_entries = [e for (kind, _key), e in by_key.items() if kind == KIND_PROCESS_COMM]
         return len(comm_entries) >= self.profile_min_keys
+
+    def cursor_profile_warm(self, device_id: str) -> bool:
+        """Warm when enough distinct cursor_tool keys exist (no age fallback)."""
+        by_key = self._devices.get(device_id) or {}
+        tool_entries = [e for (kind, _key), e in by_key.items() if kind == KIND_CURSOR_TOOL]
+        return len(tool_entries) >= self.profile_min_keys

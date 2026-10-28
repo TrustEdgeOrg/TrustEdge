@@ -61,3 +61,35 @@ def test_snapshot_device():
     assert snap["items"][0]["first_seen_at"].endswith("Z")
     assert snap["profile_warm"] is False
     assert snap["suppress_age_hours"] == 0
+
+
+def test_seed_skips_existing_and_observe_increments():
+    store = BaselineStore(suppress_count=20, profile_min_keys=5)
+    assert store.seed(
+        "dev_h",
+        KIND_PROCESS_COMM,
+        "chrome",
+        count=40,
+        first_seen=1_000_000.0,
+        last_seen=1_000_100.0,
+    )
+    assert store.seed(
+        "dev_h",
+        KIND_PROCESS_COMM,
+        "chrome",
+        count=1,
+        first_seen=1.0,
+        last_seen=2.0,
+    ) is False
+    d = store.observe("dev_h", KIND_PROCESS_COMM, "chrome", now=1_000_200.0)
+    assert d.count == 41
+    assert d.profile_warm is False
+
+
+def test_seed_warms_profile_without_observe():
+    store = BaselineStore(suppress_count=20, profile_min_keys=2)
+    store.seed("dev_w", KIND_PROCESS_COMM, "a", count=3, first_seen=1.0, last_seen=1.0)
+    store.seed("dev_w", KIND_PROCESS_COMM, "b", count=3, first_seen=1.0, last_seen=1.0)
+    d = store.observe("dev_w", KIND_PROCESS_COMM, "c", now=2.0)
+    assert d.profile_warm is True
+    assert d.count == 1

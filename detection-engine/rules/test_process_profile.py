@@ -94,7 +94,7 @@ def test_novel_process_alert_shape():
     alert = novel_process_alert(
         event,
         behavior_key="evil",
-        meta={"comm": "evil", "executable": "evil"},
+        meta={"comm": "evil", "executable": "/tmp/evil"},
     )
     assert alert is not None
     assert alert.alert_type == ALERT_NOVEL_PROCESS
@@ -102,3 +102,28 @@ def test_novel_process_alert_shape():
     assert "evil" in alert.message
     assert alert.event_type == TYPE_PROCESS_START
     assert '"behavior_key":"evil"' in (alert.detail or "")
+
+
+def test_novel_process_skips_apple_system_paths():
+    event = _process_start(
+        comm="voicebankingd",
+        executable="/System/Library/PrivateFrameworks/VoiceBanking.framework/Versions/A/XPCServices/voicebankingd.xpc/Contents/MacOS/voicebankingd",
+    )
+    alert = novel_process_alert(
+        event,
+        behavior_key="voicebankingd",
+        meta={
+            "comm": "voicebankingd",
+            "executable": "/system/library/privateframeworks/voicebanking.framework/versions/a/xpcservices/voicebankingd.xpc/contents/macos/voicebankingd",
+        },
+    )
+    assert alert is None
+
+
+def test_profile_keys_keep_full_executable_path():
+    store = StateStore()
+    event = _process_start(executable="/usr/bin/curl")
+    kind, key, meta = profile_keys_from_event(event, store)[0]
+    assert kind == KIND_PROCESS_COMM
+    assert key == "curl"
+    assert meta["executable"] == "/usr/bin/curl"

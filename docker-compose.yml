@@ -87,6 +87,19 @@ services:
       start_period: 15s
     restart: always
 
+  redpanda-console:
+    profiles: ["console"]
+    image: ${REDPANDA_CONSOLE_IMAGE:-docker.redpanda.com/redpandadata/console:v2.8.8}
+    container_name: trustedge-redpanda-console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "127.0.0.1:${REDPANDA_CONSOLE_PORT:-8081}:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: always
+
   detection-engine:
     build:
       context: ./detection-engine
@@ -97,7 +110,9 @@ services:
       KAFKA_TOPIC: trustedge.agent.events
       KAFKA_GROUP_ID: detection-engine
       ALERT_API_PORT: "9090"
-      TRUSTEDGE_POST_ALERTS_TO_BACKEND: "0"
+      TRUSTEDGE_POST_ALERTS_TO_BACKEND: "1"
+      TRUSTEDGE_POST_BEHAVIORS_TO_BACKEND: "1"
+      TRUSTEDGE_POST_AGENT_ACTIONS_TO_BACKEND: "1"
       API_BASE_URL: http://backend:8000
       TRUSTEDGE_INGEST_TOKEN: ${TRUSTEDGE_INGEST_TOKEN:-}
       LOG_JSON: "1"
@@ -125,6 +140,11 @@ services:
       TRUSTEDGE_BACKEND_URL: ${TRUSTEDGE_BACKEND_URL:-http://backend:8000}
       TRUSTEDGE_INGEST_TOKEN: ${TRUSTEDGE_INGEST_TOKEN:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Device auth: dedicated Postgres DB (not control-plane RDS). Postgres-only by default.
+      # Optional auth-cache Redis: set TRUSTEDGE_AGENT_DEVICE_CREDS_REDIS_URL only if needed at scale.
+      TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL: ${TRUSTEDGE_AGENT_DEVICE_CREDS_DATABASE_URL:-}
+      TRUSTEDGE_AGENT_DEVICE_CREDS_REDIS_URL: ${TRUSTEDGE_AGENT_DEVICE_CREDS_REDIS_URL:-}
+      TRUSTEDGE_AGENT_DEVICE_CREDS_CACHE_TTL_SEC: ${TRUSTEDGE_AGENT_DEVICE_CREDS_CACHE_TTL_SEC:-300}
       KAFKA_BROKERS: redpanda:9092
       KAFKA_TOPIC: trustedge.agent.events
     volumes:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from rules.constants import ALERT_NOVEL_PROCESS, COOLDOWN_SECONDS
+from rules.constants import ALERT_NOVEL_PROCESS, COOLDOWN_SECONDS, ALERT_AI_NOVEL_CURSOR_TOOL
 
 __all__ = ["SecurityAlert", "alert_fingerprint"]
 
@@ -36,6 +36,22 @@ def _novel_process_identity(detail: str | None) -> str | None:
     if not isinstance(data, dict):
         return None
     key = str(data.get("behavior_key") or data.get("comm") or "").strip().lower()
+    return key or None
+
+
+def _novel_cursor_tool_identity(detail: str | None) -> str | None:
+    """Stable per-tool identity for ai_novel_cursor_tool dedupe."""
+    if not detail:
+        return None
+    try:
+        import json
+
+        data = json.loads(detail)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    key = str(data.get("behavior_key") or "").strip().lower()
     return key or None
 
 
@@ -84,6 +100,8 @@ class SecurityAlert:
         identity = None
         if self.alert_type == ALERT_NOVEL_PROCESS:
             identity = _novel_process_identity(self.detail)
+        elif self.alert_type == ALERT_AI_NOVEL_CURSOR_TOOL:
+            identity = _novel_cursor_tool_identity(self.detail)
         return alert_fingerprint(
             device_id=self.device_id,
             alert_type=self.alert_type,
