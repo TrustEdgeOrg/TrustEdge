@@ -10,6 +10,7 @@ from ai_activity.catalog import (
     FINDING_CLOUD_CLI,
     FINDING_CONTAINER_DEPLOY,
     FINDING_SECRETS_ACCESS,
+    FINDING_SECRETS_GIT_PUSH,
     FINDING_SHELL_NETWORK_EXFIL,
 )
 from ai_activity.graph_builder import execution_path_summary
@@ -24,6 +25,7 @@ _ALWAYS_ALERT = frozenset(
     {
         FINDING_SHELL_NETWORK_EXFIL,
         FINDING_SECRETS_ACCESS,
+        FINDING_SECRETS_GIT_PUSH,
         FINDING_CLOUD_CLI,
         FINDING_CONTAINER_DEPLOY,
     }

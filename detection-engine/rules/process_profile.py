@@ -5,7 +5,7 @@ Behavioral profile stores process_comm only (not parent>child chains).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Final, Optional
 
 from rules.alerts import SecurityAlert
 from rules.chain import DeviceChain, payload_int, payload_str, ts_iso
@@ -18,6 +18,17 @@ from rules.state import StateStore
 
 KIND_PROCESS_COMM = "process_comm"
 
+# Still learned into the baseline, but never raised as novel_process.
+_SYSTEM_EXECUTABLE_PREFIXES: Final = (
+    "/system/",
+    "/usr/libexec/",
+    "/usr/sbin/",
+    "/sbin/",
+    "/library/apple/",
+    "/library/systemexperienceagent/",
+    "/platform/",
+)
+
 
 def _norm(value: Any) -> str:
     text = str(value or "").strip().lower()
@@ -26,13 +37,30 @@ def _norm(value: Any) -> str:
     return text
 
 
+def is_system_process_noise(*, comm: str = "", executable: str = "") -> bool:
+    """True for Apple/OS helpers that flood first-seen alerts on macOS."""
+    del comm  # reserved for future name-based filters
+    exe = str(executable or "").strip().lower()
+    if not exe:
+        return False
+    if any(exe.startswith(prefix) for prefix in _SYSTEM_EXECUTABLE_PREFIXES):
+        return True
+    if "/system/library/" in exe:
+        return True
+    # Apple XPC services outside /Applications are almost always OS noise.
+    if "/contents/xpcservices/" in exe and "/applications/" not in exe:
+        return True
+    return False
+
+
 def _comm_from_payload(payload: dict[str, Any]) -> str:
     raw = payload_str(payload.get("comm")) or payload_str(payload.get("executable"))
     return _norm(raw)
 
 
 def _executable_from_payload(payload: dict[str, Any]) -> str:
-    return _norm(payload_str(payload.get("executable") or payload.get("comm")))
+    """Full lowercase path (not basename) so system-prefix filters work."""
+    return str(payload_str(payload.get("executable") or "") or "").strip().lower()
 
 
 def profile_keys_from_event(
@@ -80,6 +108,9 @@ def novel_process_alert(
         raw_payload = {}
     comm = _norm(meta.get("comm")) or _comm_from_payload(raw_payload)
     if not comm:
+        return None
+    executable = str(meta.get("executable") or _executable_from_payload(raw_payload) or "")
+    if is_system_process_noise(comm=comm, executable=executable):
         return None
 
     detail = {

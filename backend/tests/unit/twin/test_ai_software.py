@@ -33,6 +33,9 @@ def test_list_ai_software_sorted_from_twin(fake_redis):
                 "version": "1.2.3",
                 "bundle_id": "com.todesktop.230313mzl4w4u92",
                 "signature_valid": True,
+                            "skills": [
+                                {"id": "agents:review", "name": "Review", "source": "agents", "scope": "user"}
+                            ],
             },
             "claude:/applications/claude.app": {
                 "id": "claude:/applications/claude.app",
@@ -70,6 +73,9 @@ def test_list_ai_software_sorted_from_twin(fake_redis):
     assert [item.product_name for item in result.items] == ["Claude", "Cursor"]
     assert result.items[1].running is True
     assert result.items[1].version == "1.2.3"
+    assert result.items[1].skills == [
+        {"id": "agents:review", "name": "Review", "source": "agents", "scope": "user"}
+    ]
     assert all(item.installed for item in result.items)
 
 
@@ -206,6 +212,7 @@ def test_list_ai_software_includes_ide_extension_fields(fake_redis):
                 "package_identifier": "saoudrizwan.claude-dev",
                 "enabled": True,
                 "mcp_configured": True,
+                "mcp_servers": ["github", "customer-db"],
                 "local_model_product_id": "ollama",
                 "matched_evidence": ["extension_id", "host_ide"],
             },
@@ -224,6 +231,7 @@ def test_list_ai_software_includes_ide_extension_fields(fake_redis):
     assert item.enabled is True
     assert item.active is None
     assert item.mcp_configured is True
+    assert item.mcp_servers == ["github", "customer-db"]
     assert item.local_model_product_id == "ollama"
 
 

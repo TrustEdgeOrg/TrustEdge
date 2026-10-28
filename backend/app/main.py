@@ -16,6 +16,7 @@ from app.features.network_flows.routes.network_flow_route import router as netwo
 from app.features.twin.routes.twin_route import router as twin_router
 from app.features.agents.routes.agent_route import router as agent_router
 from app.features.behaviors.routes.behavior_route import router as behavior_router
+from app.features.agent_actions.routes.agent_action_route import router as agent_action_router
 from app.shared.redis_client import close_redis
 from app.shared.config import settings
 
@@ -125,6 +126,7 @@ def health(db: Session = Depends(get_db)):
 # Include routers
 app.include_router(agent_router)
 app.include_router(behavior_router)
+app.include_router(agent_action_router)
 app.include_router(twin_router)
 app.include_router(network_flow_router)
 app.include_router(dashboard_router)

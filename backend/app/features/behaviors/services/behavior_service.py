@@ -75,6 +75,10 @@ class BehaviorService:
         items = [DeviceBehaviorRead.model_validate(row) for row in rows]
         return DeviceBehaviorListResponse(items=items, total=len(items))
 
+    def clear_device(self, device_id: str) -> int:
+        """Remove durable baseline rows for a device (operator reset / detector flush)."""
+        return self.repo.delete_for_device(device_id.strip())
+
     def _is_established(self, first_seen_at: datetime, count: int) -> bool:
         if count < self.suppress_count:
             return False

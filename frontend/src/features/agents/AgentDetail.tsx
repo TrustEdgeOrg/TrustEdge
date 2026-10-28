@@ -30,12 +30,22 @@ import { useAiSessions } from '../twin/hooks/useAiSessions';
 import { useAiSoftware } from '../twin/hooks/useAiSoftware';
 import AiSessionsCard from './AiSessionsCard';
 import AiSoftwareCard from './AiSoftwareCard';
+import AgentSkillsCard from './AgentSkillsCard';
+import AgentMcpGraphView from './AgentMcpGraphView';
+import AgentActionsCard from './AgentActionsCard';
 import { isAgentOnline } from './utils/presence';
 import {
   displayBaselineKey,
   isBaselineNoise,
   prepareBaselineItems,
 } from './utils/baselineDisplay';
+import {
+  ALERT_SENSITIVE_MCP_UNGOVERNED_EGRESS,
+  agentActionChips,
+  isAiAgentActionEvent,
+  summarizeAgentAction,
+} from './utils/agentActionDisplay';
+import { buildAgentMcpGraph } from './utils/agentMcpGraph';
 import { formatShortDateTime } from '../../shared/utils/dateUtils';
 import { AgentTelemetryEvent, ConnectedAgent } from '../twin/types/connectedAgent';
 import { SecurityAlert } from '../twin/types/securityAlert';
@@ -55,9 +65,12 @@ const TYPE_LABEL: Record<string, string> = {
   ai_terminal_tool_chain: 'AI terminal tool chain',
   ai_shell_network_exfil: 'AI shell network activity',
   ai_secrets_access: 'AI secrets access',
+  ai_secrets_git_push: 'AI secrets git push',
   ai_cloud_cli_from_agent: 'AI cloud CLI',
   ai_container_build_deploy: 'AI container deploy',
   ai_multi_tool_burst: 'AI multi-tool burst',
+  ai_sensitive_mcp_ungoverned_egress: 'Sensitive MCP then ungoverned egress',
+  ai_novel_cursor_tool: 'Novel Cursor tool',
   script_spawns_shell: 'Script spawned shell',
   binary_path_mismatch: 'Binary path mismatch',
   novel_process: 'Novel process',
@@ -85,6 +98,8 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
   service_install: 'Service install',
   registry_persistence: 'Registry persistence',
   known_ai_app: 'Known AI app',
+  ai_agent_action: 'AI agent action',
+  network_connection: 'Network connection',
 };
 
 function labelAlertType(alertType: string): string {
@@ -92,7 +107,12 @@ function labelAlertType(alertType: string): string {
 }
 
 function isAiAlert(alertType: string): boolean {
-  return alertType === 'ai_tool_execution' || alertType === 'shell_spawns_ai_tool';
+  return (
+    alertType === 'ai_tool_execution' ||
+    alertType === 'shell_spawns_ai_tool' ||
+    alertType === ALERT_SENSITIVE_MCP_UNGOVERNED_EGRESS ||
+    alertType.startsWith('ai_')
+  );
 }
 
 function labelEventType(type: string): string {
@@ -140,6 +160,17 @@ function summarizeEvent(event: AgentTelemetryEvent): string {
       p.running === true ? 'running' : p.installed === true ? 'installed' : '',
     ].filter(Boolean);
     return parts.join(' · ') || 'AI app inventory';
+  }
+  if (isAiAgentActionEvent(event.type)) {
+    return summarizeAgentAction(p);
+  }
+  if (event.type === 'network_connection') {
+    const parts = [
+      p.comm ? String(p.comm) : '',
+      p.domain || p.remote_hostname || p.remote_ip || p.remote_addr || '',
+      p.remote_port != null ? `:${p.remote_port}` : '',
+    ].filter(Boolean);
+    return parts.join(' ') || 'Network connection';
   }
   const name = String(p.display_name || p.name || p.path || p.value_name || '').trim();
   return name || 'Security lifecycle event';
@@ -307,30 +338,50 @@ function TimelineCard({ events }: { events: AgentTelemetryEvent[] }) {
 
   return (
     <List dense disablePadding>
-      {events.map((event, index) => (
-        <Box key={`${event.event_id || event.type}-${event.ts}-${index}`}>
-          {index > 0 && <Divider />}
-          <ListItem alignItems="flex-start" sx={{ px: 0, py: 1.25 }}>
-            <ListItemText
-              primary={
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {labelEventType(event.type)}
+      {events.map((event, index) => {
+        const chips = isAiAgentActionEvent(event.type)
+          ? agentActionChips((event.payload || {}) as Record<string, unknown>)
+          : [];
+        return (
+          <Box key={`${event.event_id || event.type}-${event.ts}-${index}`}>
+            {index > 0 && <Divider />}
+            <ListItem alignItems="flex-start" sx={{ px: 0, py: 1.25 }}>
+              <ListItemText
+                primary={
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {labelEventType(event.type)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatShortDateTime(event.ts)}
+                    </Typography>
+                    {chips.map((c) => (
+                      <Chip
+                        key={c}
+                        size="small"
+                        label={c}
+                        variant="outlined"
+                        color={
+                          c === 'Ungoverned' || c === 'blocked' || c === 'sensitive'
+                            ? 'warning'
+                            : c === 'Governed' || c === 'allowed'
+                              ? 'success'
+                              : 'default'
+                        }
+                      />
+                    ))}
+                  </Stack>
+                }
+                secondary={
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                    {summarizeEvent(event)}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {formatShortDateTime(event.ts)}
-                  </Typography>
-                </Stack>
-              }
-              secondary={
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                  {summarizeEvent(event)}
-                </Typography>
-              }
-            />
-          </ListItem>
-        </Box>
-      ))}
+                }
+              />
+            </ListItem>
+          </Box>
+        );
+      })}
     </List>
   );
 }
@@ -510,6 +561,11 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
     error: aiSoftwareError,
     refetch: refetchAiSoftware,
   } = useAiSoftware(agentId);
+
+  const mcpGraph = useMemo(
+    () => buildAgentMcpGraph(aiSoftware.items, events),
+    [aiSoftware.items, events]
+  );
 
   const online = isAgentOnline(agent?.last_seen_at);
 
@@ -726,6 +782,98 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
           loading={aiSoftwareLoading}
           error={aiSoftwareError}
         />
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          spacing={1}
+          sx={{ mb: 1.5 }}
+        >
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            AI agent skills
+          </Typography>
+          <Tooltip title="Refresh AI skills and activity">
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => {
+                  refetchAiSoftware();
+                  refreshEvents();
+                }}
+                disabled={aiSoftwareLoading || loading}
+                aria-label="Refresh AI agent skills"
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+        <AgentSkillsCard
+          items={aiSoftware.items}
+          events={events}
+          loading={aiSoftwareLoading || loading}
+          error={aiSoftwareError}
+        />
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          spacing={1}
+          sx={{ mb: 1.5 }}
+        >
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            MCP topology
+          </Typography>
+          <Tooltip title="Refresh MCP graph (inventory + agent actions)">
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => {
+                  refetchAiSoftware();
+                  refreshEvents();
+                }}
+                disabled={aiSoftwareLoading || loading}
+                aria-label="Refresh MCP topology"
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+        <AgentMcpGraphView hosts={mcpGraph} />
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          spacing={1}
+          sx={{ mb: 1.5 }}
+        >
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            AI agent actions
+          </Typography>
+          <Tooltip title="Refresh timeline (includes MCP tool calls)">
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => refreshEvents()}
+                disabled={loading}
+                aria-label="Refresh AI agent actions"
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+        <AgentActionsCard events={events} alerts={alerts} loading={loading} />
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>

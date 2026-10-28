@@ -260,6 +260,9 @@ function PathCell({ item }: { item: AiSoftwareItem }) {
     hostIde ? `host ${hostIde}` : null,
     item.profile ? `profile ${item.profile}` : null,
     item.mcp_configured ? 'MCP configured' : null,
+    item.mcp_servers && item.mcp_servers.length
+      ? `MCP servers: ${item.mcp_servers.join(', ')}`
+      : null,
     item.local_model_product_id ? `local model ${item.local_model_product_id}` : null,
   ]
     .filter(Boolean)

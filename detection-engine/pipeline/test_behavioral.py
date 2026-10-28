@@ -103,3 +103,64 @@ def test_keeps_chain_alerts_without_baseline():
     )
     _beh, kept = engine.evaluate({"type": "network_summary", "device_id": "dev_n"}, [hit], store)
     assert kept == [hit]
+
+
+class _FakePersister:
+    enabled = True
+
+    def __init__(self, rows: list[dict] | None = None) -> None:
+        self.rows = rows or []
+        self.persisted: list[dict] = []
+        self.cleared: list[str] = []
+
+    def fetch(self, device_id: str) -> list[dict]:
+        del device_id
+        return list(self.rows)
+
+    def persist(self, **kwargs) -> None:
+        self.persisted.append(kwargs)
+
+    def clear(self, device_id: str) -> bool:
+        self.cleared.append(device_id)
+        return True
+
+
+def test_hydrate_prevents_novel_for_known_comm():
+    baseline = BaselineStore(suppress_count=20, profile_min_keys=2)
+    sink = _FakePersister(
+        rows=[
+            {
+                "behavior_kind": "process_comm",
+                "behavior_key": "seed",
+                "count": 5,
+                "first_seen_at": "2026-08-01T00:00:00Z",
+                "last_seen_at": "2026-08-01T01:00:00Z",
+            },
+            {
+                "behavior_kind": "process_comm",
+                "behavior_key": "evil",
+                "count": 4,
+                "first_seen_at": "2026-08-01T00:00:00Z",
+                "last_seen_at": "2026-08-01T01:00:00Z",
+            },
+        ]
+    )
+    engine = BehavioralEngine(baseline, persister=sink)
+    store = StateStore()
+    payload = _process_start()
+    store.record_event(payload)
+    beh, _kept = engine.evaluate(payload, [], store)
+    assert beh == []
+    assert len(sink.persisted) == 1
+    assert sink.persisted[0]["behavior_key"] == "evil"
+    assert baseline.observe("dev_n", "process_comm", "evil", now=9_000_000.0).count == 6
+
+
+def test_clear_device_flushes_durable_sink():
+    baseline = BaselineStore()
+    sink = _FakePersister()
+    engine = BehavioralEngine(baseline, persister=sink)
+    baseline.observe("dev_n", "process_comm", "chrome", now=1.0)
+    engine.clear_device("dev_n")
+    assert sink.cleared == ["dev_n"]
+    assert baseline.snapshot("dev_n")["total"] == 0

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -45,6 +46,45 @@ def post_alerts(alerts: list[dict[str, Any]]) -> bool:
         return False
 
 
+def post_agent_actions(events: list[dict[str, Any]]) -> bool:
+    """Persist ai_agent_action events to backend Postgres (fail-open)."""
+    if not events:
+        return True
+    base = _env("API_BASE_URL", "http://backend:8000").rstrip("/")
+    token = _env("TRUSTEDGE_INGEST_TOKEN", "")
+    url = f"{base}/internal/agent-actions/ingest"
+    body = json.dumps(events).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            LOG.info(
+                "agent actions ingested",
+                extra=structured_extra(
+                    "agent_actions_posted",
+                    created=payload.get("created", 0),
+                    skipped=payload.get("skipped", 0),
+                ),
+            )
+            return True
+    except urllib.error.HTTPError as exc:
+        LOG.warning(
+            "agent action ingest failed",
+            extra=structured_extra(
+                "agent_actions_post_failed",
+                status=exc.code,
+                body=exc.read()[:500],
+            ),
+        )
+        return False
+    except Exception as exc:
+        LOG.warning("agent action ingest error: %s", exc)
+        return False
+
+
 def observe_behavior(
     *,
     device_id: str,
@@ -74,7 +114,7 @@ def observe_behavior(
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            LOG.info(
+            LOG.debug(
                 "behavior observed",
                 extra=structured_extra(
                     "behavior_observed",
@@ -99,3 +139,72 @@ def observe_behavior(
     except Exception as exc:
         LOG.exception("behavior observe error: %s", exc)
         return None
+
+
+def fetch_device_behaviors(device_id: str, *, limit: int = 5000) -> list[dict[str, Any]] | None:
+    """Load durable baseline rows for hydrate. None = request failed; [] = empty."""
+    device = (device_id or "").strip()
+    if not device:
+        return []
+    base = _env("API_BASE_URL", "http://backend:8000").rstrip("/")
+    token = _env("TRUSTEDGE_INGEST_TOKEN", "")
+    qs = urllib.parse.urlencode({"device_id": device, "limit": max(1, int(limit))})
+    url = f"{base}/internal/behaviors?{qs}"
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            items = payload.get("items") if isinstance(payload, dict) else None
+            if not isinstance(items, list):
+                return []
+            return [row for row in items if isinstance(row, dict)]
+    except urllib.error.HTTPError as exc:
+        LOG.warning(
+            "behavior hydrate failed",
+            extra=structured_extra(
+                "behavior_hydrate_failed",
+                device_id=device,
+                status=exc.code,
+                body=exc.read()[:500],
+            ),
+        )
+        return None
+    except Exception as exc:
+        LOG.warning("behavior hydrate error: %s", exc)
+        return None
+
+
+def delete_device_behaviors(device_id: str) -> bool:
+    """Flush durable baseline for a device. False on failure (fail-open)."""
+    device = (device_id or "").strip()
+    if not device:
+        return True
+    base = _env("API_BASE_URL", "http://backend:8000").rstrip("/")
+    token = _env("TRUSTEDGE_INGEST_TOKEN", "")
+    url = f"{base}/internal/behaviors/{urllib.parse.quote(device, safe='')}"
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()
+            return True
+    except urllib.error.HTTPError as exc:
+        LOG.warning(
+            "behavior clear failed",
+            extra=structured_extra(
+                "behavior_clear_failed",
+                device_id=device,
+                status=exc.code,
+                body=exc.read()[:500],
+            ),
+        )
+        return False
+    except Exception as exc:
+        LOG.warning("behavior clear error: %s", exc)
+        return False
+
